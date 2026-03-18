@@ -1,44 +1,59 @@
 #!/usr/bin/env bash
 
-set -e # Fail script if any command fails
+set -e
 
 if [[ $UID != 0 ]]; then
     echo "Please run this script with sudo."
     exit 1
 fi
 
-if [ -z "$(docker images -q robomaster_bridge:latest 2> /dev/null)" ]; then
+IMAGE_NAME="robomaster_bridge:latest"
+SERVICE_NAME="robomaster_bridge"
+
+if [ -z "$(docker images -q ${IMAGE_NAME} 2> /dev/null)" ]; then
     echo "Build docker container"
-    docker build . -t robomaster_bridge:latest
+    docker build . -t ${IMAGE_NAME}
 fi
 
 echo "Prepare system service and config files"
-set +e # read returns 1 by default
-read -r -d '' camera_service <<EOF
+
+set +e
+read -r -d '' bridge_service <<'EOF'
 [Unit]
-Description=Connect Robomaster
-After=docker.service
-Requires=docker.service
-After=systemd-networkd.service
-Requires=systemd-networkd
+Description=RoboMaster CAN Bridge
+After=docker.service systemd-networkd.service network-online.target
+Requires=docker.service systemd-networkd.service
+Wants=network-online.target
 
 [Service]
-ExecStartPre=ifconfig can0 txqueuelen 1000
-ExecStart=/usr/bin/docker run --rm --runtime nvidia --network host --hostname $(hostname) robomaster_bridge:latest /bin/bash -c ". install/setup.bash && ros2 launch robomaster_can_ros_bridge/launch/bridge.launch.py"
+Type=simple
+# Bring up SocketCAN if the interface already exists
+ExecStartPre=/bin/sh -c '/sbin/ip link show can0 >/dev/null 2>&1'
+ExecStartPre=/bin/sh -c '/sbin/ip link set can0 up type can bitrate 1000000'
+ExecStartPre=/bin/sh -c '/sbin/ip link set can0 txqueuelen 65536'
+ExecStart=/usr/bin/docker run --rm \
+  --name robomaster_bridge \
+  --network host \
+  --privileged \
+  --hostname %H \
+  robomaster_bridge:latest \
+  /bin/bash -lc "source /opt/ros/humble/setup.bash && source /opt/robomaster_ws/install/setup.bash && ros2 launch src/robomaster_ros2_can/robomaster_can_ros/launch/bridge.launch.py"
+ExecStop=/usr/bin/docker stop -t 10 robomaster_bridge
 KillSignal=SIGINT
 Restart=always
+RestartSec=2
 
 [Install]
 WantedBy=multi-user.target
 EOF
 
-read -r -d '' can_modules <<EOF
+read -r -d '' can_modules <<'EOF'
 can
 can_raw
-mttcan
+mcp251x
 EOF
 
-read -r -d '' can_network <<EOF
+read -r -d '' can_network <<'EOF'
 [Match]
 Name=can0
 
@@ -46,30 +61,28 @@ Name=can0
 BitRate=1M
 RestartSec=100ms
 EOF
-
 set -e
 
 echo "Write systemd service"
-echo "${camera_service}" > /etc/systemd/system/robomaster_bridge.service
+echo "${bridge_service}" > /etc/systemd/system/${SERVICE_NAME}.service
 
+echo "Write kernel module load config"
 echo "${can_modules}" > /etc/modules-load.d/can.conf
 
+echo "Write systemd-networkd CAN config"
+mkdir -p /etc/systemd/network
 echo "${can_network}" > /etc/systemd/network/80-can.network
 
-echo "Delete mttcan blacklisting"
-set +e # Allow error if it does not exist
-mv /etc/modprobe.d/denylist-mttcan.conf .
-set -e
+echo "Reload systemd"
+systemctl daemon-reload
 
-echo "Enable systemd-networkd to bring up can on boot"
+echo "Enable systemd-networkd to bring up CAN on boot"
 systemctl enable systemd-networkd
-systemctl start systemd-networkd
+systemctl restart systemd-networkd
 
-echo "Enable and start robomaster bridge service"
-systemctl enable robomaster_bridge
-systemctl start robomaster_bridge
+echo "Enable and start RoboMaster bridge service"
+systemctl enable ${SERVICE_NAME}
+systemctl restart ${SERVICE_NAME}
 
-echo "Success! Reboot required."
-
-# Not sure if needed
-
+echo "Done."
+echo "Make sure your Pi boot config has the correct MCP2515 overlay for your exact Waveshare HAT revision, then reboot if you changed boot config."

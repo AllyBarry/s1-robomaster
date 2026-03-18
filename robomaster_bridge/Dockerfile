@@ -1,13 +1,53 @@
-FROM dustynv/ros:humble-ros-base-l4t-r35.3.1
+FROM ros:humble-ros-base
 
-RUN apt-get update && apt-get install -y git nano
+SHELL ["/bin/bash", "-c"]
 
-RUN mkdir /opt/robomaster
-WORKDIR /opt/robomaster
-
-RUN git clone https://github.com/janblumenkamp/robomaster_ros2_can.git --recurse
-WORKDIR /opt/robomaster/robomaster_ros2_can
-RUN . /opt/ros/humble/install/setup.sh && colcon build
-
+ENV DEBIAN_FRONTEND=noninteractive
+ENV ROS_DISTRO=humble
 ENV ROS_DOMAIN_ID=0
+
+# Basic build tools and ROS dependency tooling
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+        ros-humble-rmw-cyclonedds-cpp \
+        git \
+        nano \
+        vim \
+        build-essential \
+        cmake \
+        pkg-config \
+        python3-pip \
+        python3-colcon-common-extensions \
+        python3-rosdep \
+        iproute2 \
+        net-tools \
+        can-utils && \
+    rm -rf /var/lib/apt/lists/*
 ENV RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
+
+# Initialize rosdep once in the image
+RUN rosdep init 2>/dev/null || true && rosdep update
+
+# Create a proper colcon workspace
+WORKDIR /opt/robomaster_ws/src
+
+# Clone the package(s)
+RUN git clone https://github.com/proroklab/robomaster_ros2_can.git --recurse-submodules
+
+# Move to workspace root
+WORKDIR /opt/robomaster_ws
+
+# Install package dependencies from package.xml files
+RUN . /opt/ros/${ROS_DISTRO}/setup.bash && \
+    rosdep install --from-paths src --ignore-src -r -y --rosdistro ${ROS_DISTRO}
+
+# Build the workspace
+RUN . /opt/ros/${ROS_DISTRO}/setup.bash && \
+    colcon build --symlink-install
+
+# Source both underlay and overlay when a container starts
+RUN echo "source /opt/ros/${ROS_DISTRO}/setup.bash" >> /root/.bashrc && \
+    echo "source /opt/robomaster_ws/install/setup.bash" >> /root/.bashrc
+
+WORKDIR /opt/robomaster_ws
+CMD ["/bin/bash"]

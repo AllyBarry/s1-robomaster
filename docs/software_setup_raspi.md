@@ -105,11 +105,6 @@ sudo cp docker/daemon.json /etc/docker
 sudo service docker restart
 ```
 
-Optional: Pull images for CAN, cam and UI:
-```
-sudo ./docker/pull_images.sh
-```
-If this step is skipped, the installation commands will build from scratch.
 
 ## Set up CAN
 ```
