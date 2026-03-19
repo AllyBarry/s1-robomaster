@@ -26,10 +26,10 @@ Requires=docker.service systemd-networkd.service
 Wants=network-online.target
 
 [Service]
-Type=simple
+Type=exec
 # Bring up SocketCAN if the interface already exists
-ExecStartPre=/bin/sh -c '/sbin/ip link show can0 >/dev/null 2>&1'
-ExecStartPre=/bin/sh -c '/sbin/ip link set can0 up type can bitrate 1000000'
+#ExecStartPre=/bin/sh -c '/sbin/ip link show can0 >/dev/null 2>&1'
+#ExecStartPre=/bin/sh -c '/sbin/ip link set can0 up type can bitrate 1000000'
 ExecStartPre=/bin/sh -c '/sbin/ip link set can0 txqueuelen 65536'
 ExecStart=/usr/bin/docker run --rm \
   --name robomaster_bridge \
@@ -37,7 +37,7 @@ ExecStart=/usr/bin/docker run --rm \
   --privileged \
   --hostname %H \
   robomaster_bridge:latest \
-  /bin/bash -lc "source /opt/ros/humble/setup.bash && source /opt/robomaster_ws/install/setup.bash && ros2 launch src/robomaster_ros2_can/robomaster_can_ros/launch/bridge.launch.py"
+  /bin/bash -lc "source /opt/ros/humble/setup.bash && source /opt/robomaster_ws/install/setup.bash && ros2 launch src/robomaster_ros2_can/robomaster_can_ros_bridge/launch/bridge.launch.py"
 ExecStop=/usr/bin/docker stop -t 10 robomaster_bridge
 KillSignal=SIGINT
 Restart=always
