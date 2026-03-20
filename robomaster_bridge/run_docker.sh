@@ -18,5 +18,4 @@ docker run --rm \
   --privileged \
   --hostname "$(cat /etc/hostname)" \
   robomaster_bridge:latest \
-#   /bin/bash -lc "source /opt/ros/humble/setup.bash && source /opt/robomaster_ws/install/setup.bash && ros2 launch robomaster_can_ros_bridge bridge.launch.py"
-  /bin/bash -lc "source /opt/ros/humble/setup.bash && source /opt/robomaster_ws/install/setup.bash && ros2 launch src/robomaster_ros2_can/robomaster_can_ros/launch/bridge.launch.py"
+  /bin/bash -lc "source /opt/ros/humble/setup.bash && source /opt/robomaster_ws/install/setup.bash && ros2 launch src/robomaster_ros2_can/robomaster_can_ros_bridge/launch/bridge.launch.py"
