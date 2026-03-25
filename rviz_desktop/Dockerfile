@@ -36,10 +36,11 @@ ENV RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
 ENV QT_X11_NO_MITSHM=1
 ENV LIBGL_ALWAYS_SOFTWARE=1
 
-WORKDIR /work
+WORKDIR /ros_ws
 
-COPY rviz_entrypoint.sh /rviz_entrypoint.sh
-RUN chmod +x /rviz_entrypoint.sh
+COPY rviz_entrypoint.sh /ros_ws/rviz_entrypoint.sh
+RUN chmod +x /ros_ws/rviz_entrypoint.sh
 
-ENTRYPOINT ["/rviz_entrypoint.sh"]
+
+ENTRYPOINT ["/ros_ws/rviz_entrypoint.sh"]
 CMD ["rviz2"]
