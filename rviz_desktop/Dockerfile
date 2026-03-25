@@ -1,4 +1,4 @@
-FROM ros:humble-desktop-jammy
+FROM ros:humble-ros-core
 
 SHELL ["/bin/bash", "-c"]
 ENV DEBIAN_FRONTEND=noninteractive

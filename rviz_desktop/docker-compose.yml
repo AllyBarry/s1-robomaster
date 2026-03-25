@@ -2,18 +2,17 @@ services:
   rviz:
     build:
       context: .
-      dockerfile: Dockerfile.rviz
+      dockerfile: Dockerfile
     container_name: rviz2_viewer
     network_mode: host
     ipc: host
-    environment:
-      
-DISPLAY=${DISPLAY}
-ROS_DOMAIN_ID=0
-RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
-QT_X11_NO_MITSHM=1
-LIBGL_ALWAYS_SOFTWARE=1
-volumes:
-/tmp/.X11-unix:/tmp/.X11-unix:rw
-${HOME}/.Xauthority:/root/.Xauthority:ro
-restart: "no"
+    environment:  
+      - DISPLAY=${DISPLAY}
+      - ROS_DOMAIN_ID=0
+      - RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
+      - QT_X11_NO_MITSHM=1
+      - LIBGL_ALWAYS_SOFTWARE=1
+    volumes:
+      - /tmp/.X11-unix:/tmp/.X11-unix:rw
+      - ${HOME}/.Xauthority:/root/.Xauthority:ro
+    restart: "no"
