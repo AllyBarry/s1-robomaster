@@ -3,7 +3,7 @@ FROM ros:humble-desktop-jammy
 SHELL ["/bin/bash", "-c"]
 ENV DEBIAN_FRONTEND=noninteractive
 
-Core GUI / GL / debugging utilities for RViz in Docker
+# Core GUI / GL / debugging utilities for RViz in Docker
 RUN apt-get update && apt-get install -y \
     ros-humble-rviz2 \
     ros-humble-rqt \
@@ -23,7 +23,7 @@ RUN apt-get update && apt-get install -y \
     usbutils \
     && rm -rf /var/lib/apt/lists/*
 
-Optional but useful for matching your live stack
+# Optional but useful for matching your live stack
 RUN apt-get update && apt-get install -y \
     ros-humble-openni2-camera \
     ros-humble-apriltag-ros \
