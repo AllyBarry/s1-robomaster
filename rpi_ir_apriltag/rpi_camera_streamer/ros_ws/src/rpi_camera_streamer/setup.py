@@ -14,7 +14,12 @@ setup(
         (os.path.join("share", package_name, "launch"), glob("launch/*.py")),
         (os.path.join("share", package_name, "config"), glob("config/*.yaml")),
     ],
-    install_requires=["setuptools"],
+    entry_points={
+        "console_scripts": [
+            "camera_info_publisher = rpi_camera_streamer.camera_info_publisher:main",
+        ],
+    },
+    install_requires=["setuptools", "pyyaml"],
     zip_safe=True,
     maintainer="you",
     maintainer_email="you@example.com",
