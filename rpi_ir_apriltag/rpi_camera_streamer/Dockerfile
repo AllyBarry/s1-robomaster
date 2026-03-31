@@ -13,6 +13,7 @@ RUN apt-get update && apt-get install -y \
     usbutils \
     libopenni2-0 \
     ros-humble-openni2-camera \
+    ros-humble-camera-calibration \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /ros_ws
