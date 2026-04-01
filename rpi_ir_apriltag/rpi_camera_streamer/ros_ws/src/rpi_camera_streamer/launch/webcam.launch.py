@@ -1,34 +1,21 @@
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument
+from launch.actions import DeclareLaunchArgument, OpaqueFunction
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
 
 
-def generate_launch_description():
-    video_device_arg = DeclareLaunchArgument(
-        "video_device",
-        default_value="/dev/video0",
-        description="V4L2 video device path",
-    )
-
-    image_width_arg = DeclareLaunchArgument(
-        "image_width", default_value="640", description="Image width"
-    )
-
-    image_height_arg = DeclareLaunchArgument(
-        "image_height", default_value="480", description="Image height"
-    )
+def launch_setup(context):
+    video_device = LaunchConfiguration("video_device").perform(context)
+    image_width = int(LaunchConfiguration("image_width").perform(context))
+    image_height = int(LaunchConfiguration("image_height").perform(context))
 
     webcam_node = Node(
         package="v4l2_camera",
         executable="v4l2_camera_node",
         name="webcam",
         parameters=[{
-            "video_device": LaunchConfiguration("video_device"),
-            "image_size": [
-                LaunchConfiguration("image_width"),
-                LaunchConfiguration("image_height"),
-            ],
+            "video_device": video_device,
+            "image_size": [image_width, image_height],
             "pixel_format": "YUYV",
             "camera_frame_id": "webcam_link",
         }],
@@ -39,9 +26,25 @@ def generate_launch_description():
         output="screen",
     )
 
+    return [webcam_node]
+
+
+def generate_launch_description():
     return LaunchDescription([
-        video_device_arg,
-        image_width_arg,
-        image_height_arg,
-        webcam_node,
+        DeclareLaunchArgument(
+            "video_device",
+            default_value="/dev/video0",
+            description="V4L2 video device path",
+        ),
+        DeclareLaunchArgument(
+            "image_width",
+            default_value="640",
+            description="Image width",
+        ),
+        DeclareLaunchArgument(
+            "image_height",
+            default_value="480",
+            description="Image height",
+        ),
+        OpaqueFunction(function=launch_setup),
     ])
