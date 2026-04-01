@@ -14,7 +14,8 @@ RUN apt-get update && apt-get install -y \
     libopenni2-0 \
     ros-humble-openni2-camera \
     ros-humble-v4l2-camera \
-    ros-humble-camera-calibration \
+    # ros-humble-camera-calibration \
+    ros-humble-image-pipeline \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /ros_ws
@@ -30,4 +31,6 @@ COPY entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 
 ENTRYPOINT ["/entrypoint.sh"]
-CMD ["ros2", "launch", "rpi_camera_streamer", "camera.launch.py"]
+# CMD ["ros2", "launch", "rpi_camera_streamer", "camera.launch.py"]
+CMD ["ros2", "launch", "rpi_camera_streamer", "webcam.launch.py"]
+# CMD ["ros2", "run", "camera_calibration", "cameracalibrator", "--size", "4x6", "--square", "0.04", "--ros-args", "-r", "image:=/ir/image", "-r", "camera:=/ir"]
