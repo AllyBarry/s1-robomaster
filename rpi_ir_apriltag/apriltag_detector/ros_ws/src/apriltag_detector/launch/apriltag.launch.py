@@ -22,17 +22,17 @@ def generate_launch_description():
         description="Camera info topic to subscribe to",
     )
 
-    rectify = Node(
-        package="image_proc",
-        executable="rectify_node",
-        name="rectify",
-        remappings=[
-            ("image", LaunchConfiguration("image_topic")),
-            ("camera_info", LaunchConfiguration("camera_info_topic")),
-            ("image_rect", "/camera/image_rect"),
-        ],
-        output="screen",
-    )
+    # rectify = Node(
+    #     package="image_proc",
+    #     executable="rectify_node",
+    #     name="rectify",
+    #     remappings=[
+    #         ("image", LaunchConfiguration("image_topic")),
+    #         ("camera_info", LaunchConfiguration("camera_info_topic")),
+    #         ("image_rect", "/camera/image_rect"),
+    #     ],
+    #     output="screen",
+    # )
 
     apriltag = Node(
         package="apriltag_ros",
@@ -40,8 +40,18 @@ def generate_launch_description():
         name="apriltag",
         parameters=[apriltag_yaml],
         remappings=[
-            ("image_rect", "/camera/image_rect"),
+            ("image_rect", LaunchConfiguration("image_topic")),
             ("camera_info", LaunchConfiguration("camera_info_topic")),
+        ],
+        output="screen",
+    )
+
+    overlay = Node(
+        package="apriltag_detector",
+        executable="detection_overlay",
+        name="detection_overlay",
+        remappings=[
+            ("image_raw", LaunchConfiguration("image_topic")),
         ],
         output="screen",
     )
@@ -49,6 +59,7 @@ def generate_launch_description():
     return LaunchDescription([
         image_topic_arg,
         camera_info_topic_arg,
-        rectify,
+        # rectify,
         apriltag,
+        overlay,
     ])

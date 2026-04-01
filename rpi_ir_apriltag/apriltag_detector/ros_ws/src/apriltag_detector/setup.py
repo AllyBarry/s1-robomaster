@@ -14,6 +14,11 @@ setup(
         (os.path.join("share", package_name, "launch"), glob("launch/*.py")),
         (os.path.join("share", package_name, "config"), glob("config/*.yaml")),
     ],
+    entry_points={
+        "console_scripts": [
+            "detection_overlay = apriltag_detector.detection_overlay:main",
+        ],
+    },
     install_requires=["setuptools"],
     zip_safe=True,
     maintainer="you",
