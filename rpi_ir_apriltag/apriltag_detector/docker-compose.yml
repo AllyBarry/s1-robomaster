@@ -6,6 +6,8 @@ services:
     container_name: apriltag_detector
     network_mode: host
     ipc: host
+    volume:
+      - ./ros_ws/src:/ros_ws/src
     environment:
       - ROS_DOMAIN_ID=0
       - RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
