@@ -1,6 +1,6 @@
-field_localizer:
+"/**":
   ros__parameters:
-    # IDs of the 16h5 corner tags (ordered: top-left, top-right, bottom-right, bottom-left)
+    # IDs of the 36h11 corner tags (ordered: top-left, top-right, bottom-right, bottom-left)
     corner_tag_ids: [0, 1, 2, 3]
 
     # Corresponding real-world field positions in meters, flattened [x0,y0, x1,y1, ...]
