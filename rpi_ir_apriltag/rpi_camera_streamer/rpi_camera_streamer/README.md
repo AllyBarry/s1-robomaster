@@ -309,3 +309,120 @@ camera node reloads calibration
 
 If you want, I can also turn this into a polished markdown `README.md` file block you can paste directly into your repo.
 
+`xhost +local:…` is needed because Docker containers are **not trusted by the X server** by default.
+
+When you forward X11, three things must happen:
+
+1. container must know which display to use (`DISPLAY`)
+2. container must access the X11 socket (`/tmp/.X11-unix`)
+3. X server must **allow** the container to connect → this is what `xhost` does
+
+Without step 3, you get errors like:
+
+* cannot open display
+* GTK backend failed
+* OpenCV window not showing
+* connection refused
+
+## What `xhost +local:root` does
+
+It tells the X server:
+
+> allow local processes running as root to connect to this display
+
+Your container runs as `root`, so this allows GUI apps inside Docker to open windows.
+
+## Why Docker needs it
+
+From X11’s perspective:
+
+* your desktop session = trusted
+* Docker container = unknown client
+* unknown clients are blocked
+
+So you explicitly allow:
+
+```bash
+xhost +local:root
+```
+
+Now container GUI apps work.
+
+## What happens without it
+
+You typically see:
+
+```text
+cannot open display
+GTK backend error
+connection refused
+cv2.namedWindow failed
+```
+
+Exactly what you hit.
+
+## What `local` means
+
+`local:` = UNIX socket clients (like Docker containers)
+
+not remote network hosts.
+
+So this is safer than:
+
+```bash
+xhost +
+```
+
+which allows everything.
+
+## Safer versions
+
+Allow only root local:
+
+```bash
+xhost +local:root
+```
+
+Allow only current user:
+
+```bash
+xhost +SI:localuser:$(whoami)
+```
+
+Remove permission later:
+
+```bash
+xhost -local:root
+```
+
+## Full pipeline
+
+You need all three:
+
+Docker compose:
+
+```yaml
+environment:
+  - DISPLAY=${DISPLAY}
+
+volumes:
+  - /tmp/.X11-unix:/tmp/.X11-unix
+  - ${HOME}/.Xauthority:/root/.Xauthority
+```
+
+Host:
+
+```bash
+xhost +local:root
+```
+
+Then GUI works.
+
+## Summary
+
+You need `xhost` because:
+
+* container is not trusted by X server
+* GUI apps need permission to open windows
+* `xhost +local:root` grants that permission
+
