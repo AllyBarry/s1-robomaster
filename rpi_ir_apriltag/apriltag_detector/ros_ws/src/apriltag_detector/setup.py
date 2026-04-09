@@ -17,6 +17,7 @@ setup(
     entry_points={
         "console_scripts": [
             "detection_overlay = apriltag_detector.detection_overlay:main",
+            "field_localizer = apriltag_detector.field_localizer:main",
         ],
     },
     install_requires=["setuptools"],
