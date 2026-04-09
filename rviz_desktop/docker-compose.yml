@@ -1,3 +1,5 @@
+version: "3.9"
+
 services:
   rviz:
     build:
@@ -6,7 +8,7 @@ services:
     container_name: rviz2_viewer
     network_mode: host
     ipc: host
-    environment:  
+    environment:
       - DISPLAY=${DISPLAY}
       - ROS_DOMAIN_ID=0
       - RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
@@ -15,4 +17,7 @@ services:
     volumes:
       - /tmp/.X11-unix:/tmp/.X11-unix:rw
       - ${HOME}/.Xauthority:/root/.Xauthority:ro
+      - ./ros_ws/src:/ros_ws/src   
+    command: rviz2
     restart: "no"
+
