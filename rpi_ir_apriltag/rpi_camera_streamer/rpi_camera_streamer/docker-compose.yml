@@ -1,0 +1,46 @@
+version: "3.9"
+
+services:
+  camera:
+    build: .
+    network_mode: host
+    ipc: host
+    privileged: true
+    volumes:
+      - /dev:/dev
+      - ./ros_ws/src:/ros_ws/src
+      - /tmp/.X11-unix:/tmp/.X11-unix:rw
+      - ${HOME}/.Xauthority:/root/.Xauthority:ro
+      - ./camera_info:/root/.ros/camera_info
+    environment:
+      - DISPLAY=${DISPLAY}
+      - ROS_DOMAIN_ID=0
+      - RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
+      - QT_X11_NO_MITSHM=1
+    command: ros2 launch rpi_camera_streamer webcam.launch.py
+    restart: "no"
+
+  calibrate:
+    build: .
+    network_mode: host
+    ipc: host
+    privileged: true
+    volumes:
+      - /dev:/dev
+      - ./ros_ws/src:/ros_ws/src
+      - /tmp/.X11-unix:/tmp/.X11-unix:rw
+      - ${HOME}/.Xauthority:/root/.Xauthority:ro
+      - ./camera_info:/root/.ros/camera_info
+    environment:
+      - DISPLAY=${DISPLAY}
+      - ROS_DOMAIN_ID=0
+      - RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
+      - QT_X11_NO_MITSHM=1
+    command: >
+      ros2 run camera_calibration cameracalibrator
+      --size 4x6
+      --square 0.04
+      --ros-args
+      -r image:=/webcam/image_raw
+      -r camera:=/webcam
+    restart: "no"
