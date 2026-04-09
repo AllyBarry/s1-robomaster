@@ -8,7 +8,9 @@ import os
 
 def generate_launch_description():
     pkg_share = get_package_share_directory("apriltag_detector")
-    apriltag_yaml = os.path.join(pkg_share, "config", "apriltag.yaml")
+    apriltag_robots_yaml = os.path.join(pkg_share, "config", "apriltag.yaml")
+    apriltag_field_yaml = os.path.join(pkg_share, "config", "apriltag_field.yaml")
+    field_yaml = os.path.join(pkg_share, "config", "field.yaml")
 
     image_topic_arg = DeclareLaunchArgument(
         "image_topic",
@@ -22,27 +24,40 @@ def generate_launch_description():
         description="Camera info topic to subscribe to",
     )
 
-    # rectify = Node(
-    #     package="image_proc",
-    #     executable="rectify_node",
-    #     name="rectify",
-    #     remappings=[
-    #         ("image", LaunchConfiguration("image_topic")),
-    #         ("camera_info", LaunchConfiguration("camera_info_topic")),
-    #         ("image_rect", "/camera/image_rect"),
-    #     ],
-    #     output="screen",
-    # )
-
-    apriltag = Node(
+    # 36h11 detector — robots
+    apriltag_robots = Node(
         package="apriltag_ros",
         executable="apriltag_node",
-        name="apriltag",
-        parameters=[apriltag_yaml],
+        name="apriltag_robots",
+        parameters=[apriltag_robots_yaml],
         remappings=[
             ("image_rect", LaunchConfiguration("image_topic")),
             ("camera_info", LaunchConfiguration("camera_info_topic")),
+            ("detections", "/detections/robots"),
         ],
+        output="screen",
+    )
+
+    # 16h5 detector — field corners
+    apriltag_field = Node(
+        package="apriltag_ros",
+        executable="apriltag_node",
+        name="apriltag_field",
+        parameters=[apriltag_field_yaml],
+        remappings=[
+            ("image_rect", LaunchConfiguration("image_topic")),
+            ("camera_info", LaunchConfiguration("camera_info_topic")),
+            ("detections", "/detections/field"),
+        ],
+        output="screen",
+    )
+
+    # Field localizer — homography from corners, publishes robot field coords
+    field_localizer = Node(
+        package="apriltag_detector",
+        executable="field_localizer",
+        name="field_localizer",
+        parameters=[field_yaml],
         output="screen",
     )
 
@@ -59,7 +74,8 @@ def generate_launch_description():
     return LaunchDescription([
         image_topic_arg,
         camera_info_topic_arg,
-        # rectify,
-        apriltag,
+        apriltag_robots,
+        apriltag_field,
+        field_localizer,
         overlay,
     ])

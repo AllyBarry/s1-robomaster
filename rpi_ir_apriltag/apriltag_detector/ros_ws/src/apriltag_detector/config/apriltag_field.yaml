@@ -1,8 +1,8 @@
-apriltag_robots:
+apriltag_field:
   ros__parameters:
     image_transport: raw
-    family: "36h11"
-    size: 0.162
+    family: "16h5"
+    size: 0.01
     max_hamming: 0
     detector:
       threads: 2
