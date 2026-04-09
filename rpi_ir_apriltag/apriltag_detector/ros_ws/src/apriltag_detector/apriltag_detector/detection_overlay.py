@@ -11,31 +11,39 @@ class DetectionOverlay(Node):
     def __init__(self):
         super().__init__("detection_overlay")
         self.bridge = CvBridge()
-        self.latest_field_detections = None
-        self.latest_robot_detections = None
+        self.latest_detections = None
+
+        self.declare_parameter("corner_tag_ids", [0, 1, 2, 3])
+        self.corner_ids = set(
+            self.get_parameter("corner_tag_ids").value
+        )
 
         self.create_subscription(
-            AprilTagDetectionArray, "/detections/field", self._on_field_detections, 10
-        )
-        self.create_subscription(
-            AprilTagDetectionArray, "/detections/robots", self._on_robot_detections, 10
+            AprilTagDetectionArray, "/detections", self._on_detections, 10
         )
         self.sub_image = self.create_subscription(
             Image, "image_raw", self._on_image, 10
         )
         self.pub = self.create_publisher(Image, "/detections/image", 10)
 
-    def _on_field_detections(self, msg: AprilTagDetectionArray):
-        self.latest_field_detections = msg
+    def _on_detections(self, msg: AprilTagDetectionArray):
+        self.latest_detections = msg
 
-    def _on_robot_detections(self, msg: AprilTagDetectionArray):
-        self.latest_robot_detections = msg
+    def _on_image(self, msg: Image):
+        if self.latest_detections is None:
+            return
 
-    def _draw_detections(self, cv_image, detections, color, prefix):
-        for det in detections:
+        cv_image = self.bridge.imgmsg_to_cv2(msg, desired_encoding="bgr8")
+
+        for det in self.latest_detections.detections:
             corners = np.array(
                 [(int(c.x), int(c.y)) for c in det.corners], dtype=np.int32
             )
+
+            is_corner = det.id in self.corner_ids
+            color = (255, 0, 0) if is_corner else (0, 255, 0)
+            prefix = "field" if is_corner else "robot"
+
             cv2.polylines(cv_image, [corners], isClosed=True, color=color, thickness=2)
             centre = corners.mean(axis=0).astype(int)
             label = f"{prefix}:{det.id}"
@@ -43,17 +51,6 @@ class DetectionOverlay(Node):
                 cv_image, label, (centre[0] - 20, centre[1] - 10),
                 cv2.FONT_HERSHEY_SIMPLEX, 0.6, color, 2,
             )
-
-    def _on_image(self, msg: Image):
-        if self.latest_field_detections is None and self.latest_robot_detections is None:
-            return
-
-        cv_image = self.bridge.imgmsg_to_cv2(msg, desired_encoding="bgr8")
-
-        if self.latest_field_detections:
-            self._draw_detections(cv_image, self.latest_field_detections.detections, (255, 0, 0), "field")
-        if self.latest_robot_detections:
-            self._draw_detections(cv_image, self.latest_robot_detections.detections, (0, 255, 0), "robot")
 
         out_msg = self.bridge.cv2_to_imgmsg(cv_image, encoding="bgr8")
         out_msg.header = msg.header
