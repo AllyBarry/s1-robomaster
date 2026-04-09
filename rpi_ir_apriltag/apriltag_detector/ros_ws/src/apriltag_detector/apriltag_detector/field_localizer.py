@@ -2,8 +2,9 @@ import numpy as np
 import rclpy
 from rclpy.node import Node
 from apriltag_msgs.msg import AprilTagDetectionArray
-from geometry_msgs.msg import PoseStamped, PoseArray, Pose, Point, Quaternion
+from geometry_msgs.msg import PoseStamped, PoseArray, Pose, Point, Quaternion, TransformStamped
 from std_msgs.msg import Header
+from tf2_ros import StaticTransformBroadcaster
 import cv2
 
 
@@ -41,6 +42,15 @@ class FieldLocalizer(Node):
 
         self.pub_poses = self.create_publisher(PoseArray, "/field/robot_poses", 10)
         self.robot_pose_pubs = {}
+
+        # Broadcast a static identity transform so the "field" frame exists in TF
+        self.tf_broadcaster = StaticTransformBroadcaster(self)
+        t = TransformStamped()
+        t.header.stamp = self.get_clock().now().to_msg()
+        t.header.frame_id = "field"
+        t.child_frame_id = "field"
+        t.transform.rotation.w = 1.0
+        self.tf_broadcaster.sendTransform(t)
 
         self.get_logger().info(
             f"Field localizer started — corner tag IDs: {corner_ids}"
