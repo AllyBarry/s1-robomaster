@@ -24,6 +24,9 @@ RUN mkdir -p /root/.ros/camera_info/
 COPY ros_ws/src/rpi_camera_streamer/config/rgb_PS1080_PrimeSense.yaml /root/.ros/camera_info/
 COPY ros_ws/src/rpi_camera_streamer/config/depth_PS1080_PrimeSense.yaml /root/.ros/camera_info/
 
+# Calibration files
+COPY ros_ws/src/rpi_camera_streamer/config/webcam_calib.yaml /root/.ros/camera_info/logitech_brio.yaml
+
 RUN source /opt/ros/humble/setup.bash && \
     colcon build --symlink-install
 
