@@ -79,6 +79,13 @@ class FieldLocalizer(Node):
 
         if len(self.corner_image_points) >= 4:
             self._compute_homography()
+            if self.homography is not None:
+                for tag_id, px in sorted(self.corner_image_points.items()):
+                    mapped = self.corner_map.get(tag_id)
+                    self.get_logger().debug(
+                        f"tag {tag_id}: pixel ({px[0]:.0f}, {px[1]:.0f}) "
+                        f"-> field ({mapped[0]:.2f}, {mapped[1]:.2f})"
+                    )
 
         if self.homography is None:
             return
