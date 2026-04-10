@@ -1,0 +1,6 @@
+go_to_point:
+  ros__parameters:
+    robot_id: 4
+    linear_gain: 0.8
+    max_linear_speed: 0.5
+    goal_tolerance: 0.05

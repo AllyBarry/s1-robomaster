@@ -1,0 +1,12 @@
+version: "3.9"
+
+services:
+  navigation_demo:
+    build: .
+    container_name: navigation_demo
+    network_mode: host
+    ipc: host
+    environment:
+      - ROS_DOMAIN_ID=0
+      - RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
+    restart: "no"
