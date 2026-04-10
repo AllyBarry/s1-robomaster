@@ -41,6 +41,9 @@ WORKDIR /opt/robomaster_ws
 RUN . /opt/ros/${ROS_DISTRO}/setup.bash && \
     rosdep install --from-paths src --ignore-src -r -y --rosdistro ${ROS_DISTRO}
 
+# Override the upstream launch file that hardcodes hostname as namespace
+COPY bridge.launch.py /opt/robomaster_ws/src/robomaster_ros2_can/robomaster_can_ros_bridge/launch/bridge.launch.py
+
 # Build the workspace
 RUN . /opt/ros/${ROS_DISTRO}/setup.bash && \
     colcon build --symlink-install
