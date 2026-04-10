@@ -2,6 +2,8 @@
 
 set -e
 
+ROBOT_ID="${1:?Usage: $0 <robot_id>  (e.g. $0 4)}"
+
 if ! ip link show can0 >/dev/null 2>&1; then
   echo "can0 not found. Check MCP2515 overlay / Waveshare HAT setup on the Raspberry Pi host."
   exit 1
@@ -17,5 +19,6 @@ docker run --rm \
   --network host \
   --privileged \
   --hostname "$(cat /etc/hostname)" \
+  -e ROBOT_ID="${ROBOT_ID}" \
   robomaster_bridge:latest \
   /bin/bash -lc "source /opt/ros/humble/setup.bash && source /opt/robomaster_ws/install/setup.bash && ros2 launch src/robomaster_ros2_can/robomaster_can_ros_bridge/launch/bridge.launch.py"
