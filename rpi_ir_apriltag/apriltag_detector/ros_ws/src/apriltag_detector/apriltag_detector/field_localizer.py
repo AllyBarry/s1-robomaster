@@ -4,7 +4,7 @@ from rclpy.node import Node
 from apriltag_msgs.msg import AprilTagDetectionArray
 from geometry_msgs.msg import PoseStamped, PoseArray, Pose, Point, Quaternion, TransformStamped
 from std_msgs.msg import Header
-from tf2_ros import StaticTransformBroadcaster
+from tf2_ros import StaticTransformBroadcaster, TransformBroadcaster
 import cv2
 
 
@@ -43,14 +43,17 @@ class FieldLocalizer(Node):
         self.pub_poses = self.create_publisher(PoseArray, "/field/robot_poses", 10)
         self.robot_pose_pubs = {}
 
-        # Broadcast a static identity transform so the "field" frame exists in TF
-        self.tf_broadcaster = StaticTransformBroadcaster(self)
+        # Static TF: field frame at the origin
+        self.static_tf_broadcaster = StaticTransformBroadcaster(self)
         t = TransformStamped()
         t.header.stamp = self.get_clock().now().to_msg()
-        t.header.frame_id = "field"
+        t.header.frame_id = "map"
         t.child_frame_id = "field"
         t.transform.rotation.w = 1.0
-        self.tf_broadcaster.sendTransform(t)
+        self.static_tf_broadcaster.sendTransform(t)
+
+        # Dynamic TF broadcaster for robot poses
+        self.tf_broadcaster = TransformBroadcaster(self)
 
         self.get_logger().info(
             f"Field localizer started — corner tag IDs: {corner_ids}"
@@ -99,6 +102,16 @@ class FieldLocalizer(Node):
                 )
             ps = PoseStamped(header=pose_array.header, pose=pose)
             self.robot_pose_pubs[det.id].publish(ps)
+
+            # Broadcast robot pose as TF: field -> robot_{id}
+            tf_msg = TransformStamped()
+            tf_msg.header = pose_array.header
+            tf_msg.child_frame_id = f"robot_{det.id}"
+            tf_msg.transform.translation.x = float(fx)
+            tf_msg.transform.translation.y = float(fy)
+            tf_msg.transform.translation.z = 0.0
+            tf_msg.transform.rotation = pose.orientation
+            self.tf_broadcaster.sendTransform(tf_msg)
 
         self.pub_poses.publish(pose_array)
 
