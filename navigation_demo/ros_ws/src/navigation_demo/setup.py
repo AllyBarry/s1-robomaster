@@ -2,7 +2,7 @@ from setuptools import setup
 from glob import glob
 import os
 
-package_name = "rpi_camera_streamer"
+package_name = "navigation_demo"
 
 setup(
     name=package_name,
@@ -16,13 +16,13 @@ setup(
     ],
     entry_points={
         "console_scripts": [
-            "camera_info_publisher = rpi_camera_streamer.camera_info_publisher:main",
+            "go_to_point = navigation_demo.go_to_point:main",
         ],
     },
-    install_requires=["setuptools", "pyyaml"],
+    install_requires=["setuptools"],
     zip_safe=True,
     maintainer="you",
     maintainer_email="you@example.com",
-    description="Camera streaming node for Raspberry Pi",
+    description="Demo navigation for RoboMaster S1",
     license="MIT",
 )

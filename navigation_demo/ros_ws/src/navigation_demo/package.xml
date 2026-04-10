@@ -1,8 +1,8 @@
 <?xml version="1.0"?>
 <package format="3">
-  <name>rpi_camera_streamer</name>
+  <name>navigation_demo</name>
   <version>0.0.1</version>
-  <description>Camera streaming node for Raspberry Pi — publishes raw IR images over ROS topics</description>
+  <description>Demo navigation node — drives a RoboMaster S1 to a clicked point using vision-based localization</description>
 
   <maintainer email="you@example.com">you</maintainer>
   <license>MIT</license>
@@ -11,10 +11,8 @@
 
   <exec_depend>launch</exec_depend>
   <exec_depend>launch_ros</exec_depend>
-  <exec_depend>openni2_camera</exec_depend>
-  <exec_depend>v4l2_camera</exec_depend>
-  <exec_depend>rclpy</exec_depend>
-  <exec_depend>sensor_msgs</exec_depend>
+  <exec_depend>geometry_msgs</exec_depend>
+<exec_depend>rclpy</exec_depend>
 
   <export>
     <build_type>ament_python</build_type>
