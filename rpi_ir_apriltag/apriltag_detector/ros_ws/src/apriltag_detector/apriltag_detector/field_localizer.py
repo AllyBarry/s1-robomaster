@@ -43,21 +43,30 @@ class FieldLocalizer(Node):
         self.pub_poses = self.create_publisher(PoseArray, "/field/robot_poses", 10)
         self.robot_pose_pubs = {}
 
-        # Static TF: field frame at the origin
-        self.static_tf_broadcaster = StaticTransformBroadcaster(self)
-        t = TransformStamped()
-        t.header.stamp = self.get_clock().now().to_msg()
-        t.header.frame_id = "map"
-        t.child_frame_id = "field"
-        t.transform.rotation.w = 1.0
-        self.static_tf_broadcaster.sendTransform(t)
-
         # Dynamic TF broadcaster for robot poses
         self.tf_broadcaster = TransformBroadcaster(self)
+
+        # Static TF: publish map -> field and keep re-publishing so
+        # late-joining subscribers (rviz, other containers) receive it.
+        self.static_tf_broadcaster = StaticTransformBroadcaster(self)
+        self._publish_static_transforms()
+        self.create_timer(1.0, self._publish_static_transforms)
 
         self.get_logger().info(
             f"Field localizer started — corner tag IDs: {corner_ids}"
         )
+
+    def _publish_static_transforms(self):
+        now = self.get_clock().now().to_msg()
+
+        # map -> field (identity — field origin is the map origin)
+        t = TransformStamped()
+        t.header.stamp = now
+        t.header.frame_id = "map"
+        t.child_frame_id = "field"
+        t.transform.rotation.w = 1.0
+
+        self.static_tf_broadcaster.sendTransform(t)
 
     # ------------------------------------------------------------------
     # Split detections into corner vs robot by tag ID
