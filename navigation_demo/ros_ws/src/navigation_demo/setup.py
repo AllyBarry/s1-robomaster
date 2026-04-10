@@ -17,7 +17,6 @@ setup(
     entry_points={
         "console_scripts": [
             "go_to_point = navigation_demo.go_to_point:main",
-            "field_visualizer = navigation_demo.field_visualizer:main",
         ],
     },
     install_requires=["setuptools"],

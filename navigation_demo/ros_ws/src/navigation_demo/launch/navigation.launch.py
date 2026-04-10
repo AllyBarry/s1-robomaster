@@ -9,7 +9,6 @@ import os
 def generate_launch_description():
     pkg_share = get_package_share_directory("navigation_demo")
     nav_yaml = os.path.join(pkg_share, "config", "navigation.yaml")
-    field_yaml = os.path.join(pkg_share, "config", "field.yaml")
 
     robot_id_arg = DeclareLaunchArgument(
         "robot_id",
@@ -28,16 +27,7 @@ def generate_launch_description():
         output="screen",
     )
 
-    field_visualizer = Node(
-        package="navigation_demo",
-        executable="field_visualizer",
-        name="field_visualizer",
-        parameters=[field_yaml],
-        output="screen",
-    )
-
     return LaunchDescription([
         robot_id_arg,
         go_to_point,
-        field_visualizer,
     ])

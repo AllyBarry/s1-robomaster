@@ -56,10 +56,19 @@ def generate_launch_description():
         output="screen",
     )
 
+    field_visualizer = Node(
+        package="apriltag_detector",
+        executable="field_visualizer",
+        name="field_visualizer",
+        parameters=[field_yaml],
+        output="screen",
+    )
+
     return LaunchDescription([
         image_topic_arg,
         camera_info_topic_arg,
         apriltag,
         field_localizer,
         overlay,
+        field_visualizer,
     ])

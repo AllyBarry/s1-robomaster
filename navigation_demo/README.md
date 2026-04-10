@@ -2,9 +2,7 @@
 
 Demo ROS 2 package that drives a RoboMaster S1 to a target point using vision-based localization from the `apriltag_detector` module.
 
-## Nodes
-
-### go_to_point
+## Node: go_to_point
 
 Proportional controller that navigates the robot toward a clicked point. The S1's mecanum wheels allow holonomic movement, so the robot drives directly toward the goal in both X and Y.
 
@@ -17,7 +15,7 @@ Proportional controller that navigates the robot toward a clicked point. The S1'
 **Publications:**
 | Topic | Type | Description |
 |---|---|---|
-| `/cmd_vel` | `geometry_msgs/Twist` | Velocity command to the robot |
+| `/robot_{id}/cmd_vel` | `geometry_msgs/Twist` | Velocity command to the robot |
 
 **Parameters:**
 | Parameter | Default | Description |
@@ -27,20 +25,11 @@ Proportional controller that navigates the robot toward a clicked point. The S1'
 | `max_linear_speed` | `0.5` | Maximum velocity (m/s) |
 | `goal_tolerance` | `0.05` | Stop distance from goal (m) |
 
-### field_visualizer
-
-Publishes rviz markers showing the field boundary and corner tag positions. Uses the same `field.yaml` configuration as the apriltag_detector.
-
-**Publications:**
-| Topic | Type | Description |
-|---|---|---|
-| `/field/markers` | `visualization_msgs/MarkerArray` | Field corners (orange cylinders), labels, and boundary outline (green) |
-
 ## Prerequisites
 
 The following modules must be running:
 - **rpi_camera_streamer** — publishes camera images
-- **apriltag_detector** — detects tags and publishes `/field/robot_{id}/pose`
+- **apriltag_detector** — detects tags, publishes `/field/robot_{id}/pose`, and visualizes the field on `/field/markers`
 - **robomaster_bridge** — subscribes to `/cmd_vel` and drives the motors
 
 ## Usage
@@ -67,10 +56,10 @@ In rviz, use the **Publish Point** tool (toolbar) and click anywhere on the fiel
 ### Visualize in rviz
 
 Add the following displays:
-- **MarkerArray** on `/field/markers` — shows the field boundary and corner tags
+- **MarkerArray** on `/field/markers` — shows the field boundary and corner tags (published by apriltag_detector)
 - **PoseArray** on `/field/robot_poses` — shows detected robot positions
 - Set the **Fixed Frame** to `field`
 
 ## Configuration
 
-Edit `config/navigation.yaml` to tune the controller, or `config/field.yaml` to match your physical field layout. If you change the field dimensions or corner tag IDs, update `field.yaml` in both this module and `apriltag_detector`.
+Edit `config/navigation.yaml` to tune the controller.

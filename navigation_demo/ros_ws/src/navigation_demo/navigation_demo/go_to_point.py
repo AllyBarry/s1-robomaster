@@ -30,15 +30,16 @@ class GoToPoint(Node):
         # Subscribe to clicked point from rviz "Publish Point" tool
         self.create_subscription(PointStamped, "/clicked_point", self._on_goal, 10)
 
-        # Publish velocity commands
-        self.cmd_pub = self.create_publisher(Twist, "/cmd_vel", 10)
+        # Publish velocity commands per robot
+        cmd_topic = f"/robot_{self.robot_id}/cmd_vel"
+        self.cmd_pub = self.create_publisher(Twist, cmd_topic, 10)
 
         # Control loop at 20 Hz
         self.create_timer(0.05, self._control_loop)
 
         self.get_logger().info(
-            f"go_to_point started — listening to {pose_topic}, "
-            f"click a point in rviz to set a goal"
+            f"go_to_point started — pose: {pose_topic}, "
+            f"cmd: {cmd_topic} — click a point in rviz to set a goal"
         )
 
     def _on_pose(self, msg: PoseStamped):
