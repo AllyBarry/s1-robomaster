@@ -6,7 +6,7 @@ services:
     container_name: apriltag_detector
     network_mode: host
     ipc: host
-    volume:
+    volumes:
       - ./ros_ws/src:/ros_ws/src
     environment:
       - ROS_DOMAIN_ID=0

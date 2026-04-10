@@ -3,8 +3,8 @@
     # IDs of the 36h11 corner tags
     # Physical layout (camera view, mounted overhead looking down):
     #   tag 10 (top-left)      tag 12 (top-right)
-    #   tag 13 (bottom-left)   tag 11 (bottom-right)
-    corner_tag_ids: [10, 12, 11, 13]
+    #   tag 11 (bottom-left)   tag 13 (bottom-right)
+    corner_tag_ids: [10, 12, 13, 11]
 
     # Corresponding real-world field positions in meters, flattened [x0,y0, x1,y1, ...]
     # Camera top = field +Y (far edge), bottom = field Y=0 (near edge)
