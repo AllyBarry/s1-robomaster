@@ -16,7 +16,8 @@ def launch_setup(context):
         parameters=[{
             "video_device": video_device,
             "image_size": [image_width, image_height],
-            "pixel_format": "YUYV",
+            "pixel_format": "MJPEG",
+            "io_method": "read",
             "camera_frame_id": "webcam_link",
         }],
         remappings=[
