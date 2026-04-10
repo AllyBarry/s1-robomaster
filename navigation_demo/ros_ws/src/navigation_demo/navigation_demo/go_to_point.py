@@ -28,6 +28,8 @@ class GoToPoint(Node):
         self.create_subscription(PoseStamped, pose_topic, self._on_pose, 10)
 
         # Subscribe to clicked point from rviz "Publish Point" tool
+        # IMPORTANT: set rviz Fixed Frame to "field" so clicked_point
+        # coordinates are in the field frame
         self.create_subscription(PointStamped, "/clicked_point", self._on_goal, 10)
 
         # Publish velocity commands per robot
@@ -46,6 +48,12 @@ class GoToPoint(Node):
         self.current_pose = msg.pose
 
     def _on_goal(self, msg: PointStamped):
+        if msg.header.frame_id != "field":
+            self.get_logger().warn(
+                f"Clicked point is in frame '{msg.header.frame_id}', "
+                f"expected 'field'. Set rviz Fixed Frame to 'field'."
+            )
+            return
         self.goal = msg.point
         self.get_logger().info(
             f"New goal: ({self.goal.x:.2f}, {self.goal.y:.2f})"
@@ -55,24 +63,35 @@ class GoToPoint(Node):
         if self.current_pose is None or self.goal is None:
             return
 
-        dx = self.goal.x - self.current_pose.position.x
-        dy = self.goal.y - self.current_pose.position.y
-        distance = math.hypot(dx, dy)
+        # Error vector in field frame
+        dx_field = self.goal.x - self.current_pose.position.x
+        dy_field = self.goal.y - self.current_pose.position.y
+        distance = math.hypot(dx_field, dy_field)
 
         cmd = Twist()
 
         if distance < self.goal_tolerance:
-            # Goal reached — stop and clear
             self.cmd_pub.publish(cmd)
             if self.goal is not None:
                 self.get_logger().info("Goal reached!")
                 self.goal = None
             return
 
+        # Extract robot heading (yaw) from orientation quaternion
+        q = self.current_pose.orientation
+        yaw = math.atan2(2.0 * (q.w * q.z + q.x * q.y),
+                         1.0 - 2.0 * (q.y * q.y + q.z * q.z))
+
+        # Rotate field-frame error into robot body frame
+        cos_yaw = math.cos(yaw)
+        sin_yaw = math.sin(yaw)
+        dx_body = cos_yaw * dx_field + sin_yaw * dy_field
+        dy_body = -sin_yaw * dx_field + cos_yaw * dy_field
+
         # Proportional control, clamped to max speed
         speed = min(self.linear_gain * distance, self.max_linear_speed)
-        cmd.linear.x = speed * (dx / distance)
-        cmd.linear.y = speed * (dy / distance)
+        cmd.linear.x = speed * (dx_body / distance)
+        cmd.linear.y = speed * (dy_body / distance)
 
         self.cmd_pub.publish(cmd)
 
