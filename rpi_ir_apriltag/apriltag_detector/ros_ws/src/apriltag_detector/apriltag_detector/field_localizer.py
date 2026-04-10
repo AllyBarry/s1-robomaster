@@ -1,3 +1,4 @@
+import math
 import numpy as np
 import rclpy
 from rclpy.node import Node
@@ -106,9 +107,21 @@ class FieldLocalizer(Node):
             field_pt = cv2.perspectiveTransform(centre, self.homography)
             fx, fy = field_pt[0, 0]
 
+            # Compute heading from tag edge: corners 0→1 is the top edge
+            # of the tag, giving the robot's forward direction in field space
+            edge_pts = corners[:2].reshape(1, 2, 2).astype(np.float32)
+            field_edge = cv2.perspectiveTransform(edge_pts, self.homography)
+            dx_tag = field_edge[0, 1, 0] - field_edge[0, 0, 0]
+            dy_tag = field_edge[0, 1, 1] - field_edge[0, 0, 1]
+            yaw = math.atan2(dy_tag, dx_tag)
+
+            # Yaw to quaternion (rotation about Z)
+            qz = math.sin(yaw / 2.0)
+            qw = math.cos(yaw / 2.0)
+
             pose = Pose(
                 position=Point(x=float(fx), y=float(fy), z=0.0),
-                orientation=Quaternion(x=0.0, y=0.0, z=0.0, w=1.0),
+                orientation=Quaternion(x=0.0, y=0.0, z=float(qz), w=float(qw)),
             )
             pose_array.poses.append(pose)
 
