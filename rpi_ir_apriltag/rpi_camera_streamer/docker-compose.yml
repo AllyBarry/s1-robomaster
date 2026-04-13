@@ -30,7 +30,7 @@ services:
       - ./ros_ws/src:/ros_ws/src
       - /tmp/.X11-unix:/tmp/.X11-unix:rw
       - ${HOME}/.Xauthority:/root/.Xauthority:ro
-      - ./camera_info:/root/.ros/camera_info
+      - ./camera_info:/tmp/
     environment:
       - DISPLAY=${DISPLAY}
       - ROS_DOMAIN_ID=0

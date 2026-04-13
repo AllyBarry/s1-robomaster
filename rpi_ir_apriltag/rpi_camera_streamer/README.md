@@ -426,3 +426,5 @@ You need `xhost` because:
 * GUI apps need permission to open windows
 * `xhost +local:root` grants that permission
 
+- After calibration you will find in `/tmp/calibrationdata.tar` `ost.yaml` which you must uncompress and put in the `.../config` 
+in `ros_ws`. Remember the name of the camera must match the config 
