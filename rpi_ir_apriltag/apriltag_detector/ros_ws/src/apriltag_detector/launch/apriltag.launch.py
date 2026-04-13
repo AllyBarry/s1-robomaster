@@ -22,20 +22,31 @@ def generate_launch_description():
         default_value="/webcam/camera_info",
         description="Camera info topic to subscribe to",
     )
+    rectify = Node(
+        package="image_proc",
+        executable="rectify_node",
+        name="rectify",
+        remappings=[
+            ("image", LaunchConfiguration("image_topic")),
+            ("camera_info", LaunchConfiguration("camera_info_topic")),
+            ("image_rect", "/webcam/image_rect"),
+        ],
+        output="screen",
+    )
 
-    # Single 36h11 detector — picks up both corner and robot tags
     apriltag = Node(
         package="apriltag_ros",
         executable="apriltag_node",
         name="apriltag",
         parameters=[apriltag_yaml],
         remappings=[
-            ("image_rect", LaunchConfiguration("image_topic")),
+            #("image_rect", LaunchConfiguration("image_topic")),
+            ("image_rect", "/webcam/image_rect"),
+            #("image_rect", "/image_rect"),
             ("camera_info", LaunchConfiguration("camera_info_topic")),
         ],
         output="screen",
     )
-
     # Field localizer — splits corner vs robot tags by ID
     field_localizer = Node(
         package="apriltag_detector",
@@ -51,7 +62,8 @@ def generate_launch_description():
         name="detection_overlay",
         parameters=[field_yaml],
         remappings=[
-            ("image_raw", LaunchConfiguration("image_topic")),
+            #("image_raw", LaunchConfiguration("image_topic")),
+            ("image_raw", "webcam/image_rect"),
         ],
         output="screen",
     )
@@ -71,4 +83,5 @@ def generate_launch_description():
         field_localizer,
         overlay,
         field_visualizer,
+        rectify,
     ])

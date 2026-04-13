@@ -1,4 +1,4 @@
-v4l2_camera:
+webcam:
   ros__parameters:
     video_device: "/dev/video0"
     image_size: [640, 480]
