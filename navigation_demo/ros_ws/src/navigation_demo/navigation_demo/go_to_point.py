@@ -1,7 +1,7 @@
 import math
 import rclpy
 from rclpy.node import Node
-from geometry_msgs.msg import PoseStamped, PointStamped, Twist
+from geometry_msgs.msg import PoseStamped, Twist
 
 
 class GoToPoint(Node):
@@ -11,7 +11,7 @@ class GoToPoint(Node):
         # Parameters
         self.declare_parameter("robot_id", 4)
         self.declare_parameter("linear_gain", 0.8)
-        self.declare_parameter("max_linear_speed", 0.5)
+        self.declare_parameter("max_linear_speed", 0.1)
         self.declare_parameter("goal_tolerance", 0.05)
 
         self.robot_id = self.get_parameter("robot_id").value
@@ -27,10 +27,10 @@ class GoToPoint(Node):
         pose_topic = f"/field/robot_{self.robot_id}/pose"
         self.create_subscription(PoseStamped, pose_topic, self._on_pose, 10)
 
-        # Subscribe to clicked point from rviz "Publish Point" tool
-        # IMPORTANT: set rviz Fixed Frame to "field" so clicked_point
+        # Subscribe to 2D Goal Pose from rviz (Nav2 Goal tool)
+        # IMPORTANT: set rviz Fixed Frame to "field" so goal_pose
         # coordinates are in the field frame
-        self.create_subscription(PointStamped, "/clicked_point", self._on_goal, 10)
+        self.create_subscription(PoseStamped, "/goal_pose", self._on_goal, 10)
 
         # Publish velocity commands per robot
         cmd_topic = f"/robot_{self.robot_id}/cmd_vel"
@@ -47,14 +47,14 @@ class GoToPoint(Node):
     def _on_pose(self, msg: PoseStamped):
         self.current_pose = msg.pose
 
-    def _on_goal(self, msg: PointStamped):
+    def _on_goal(self, msg: PoseStamped):
         if msg.header.frame_id != "field":
             self.get_logger().warn(
-                f"Clicked point is in frame '{msg.header.frame_id}', "
+                f"Goal pose is in frame '{msg.header.frame_id}', "
                 f"expected 'field'. Set rviz Fixed Frame to 'field'."
             )
             return
-        self.goal = msg.point
+        self.goal = msg.pose.position
         self.get_logger().info(
             f"New goal: ({self.goal.x:.2f}, {self.goal.y:.2f})"
         )
