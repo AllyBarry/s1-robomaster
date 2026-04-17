@@ -41,6 +41,8 @@ ExecStart=/usr/bin/docker run --rm \
   --network host \
   --privileged \
   --hostname %H \
+  --memory 512m \
+  --cpus 2.0 \
   -e ROBOT_ID=${ROBOT_ID} \
   robomaster_bridge:latest \
   /bin/bash -lc "source /opt/ros/humble/setup.bash && source /opt/robomaster_ws/install/setup.bash && ros2 launch src/robomaster_ros2_can/robomaster_can_ros_bridge/launch/bridge.launch.py"
