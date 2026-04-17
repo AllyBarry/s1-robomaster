@@ -1,4 +1,5 @@
 import math
+import time
 import rclpy
 from rclpy.node import Node
 from geometry_msgs.msg import PoseStamped, Twist
@@ -13,15 +14,20 @@ class GoToPoint(Node):
         self.declare_parameter("linear_gain", 0.8)
         self.declare_parameter("max_linear_speed", 0.1)
         self.declare_parameter("goal_tolerance", 0.05)
+        self.declare_parameter("missed_poses_limit", 3)
 
         self.robot_id = self.get_parameter("robot_id").value
         self.linear_gain = self.get_parameter("linear_gain").value
         self.max_linear_speed = self.get_parameter("max_linear_speed").value
         self.goal_tolerance = self.get_parameter("goal_tolerance").value
+        self.missed_poses_limit = self.get_parameter("missed_poses_limit").value
 
         # State
         self.current_pose = None
         self.goal = None
+        self.last_pose_time = None
+        self.pose_interval = None  # estimated period between pose messages
+        self.pose_lost_logged = False
 
         # Subscribe to robot pose from field_localizer
         pose_topic = f"/field/robot_{self.robot_id}/pose"
@@ -45,7 +51,19 @@ class GoToPoint(Node):
         )
 
     def _on_pose(self, msg: PoseStamped):
+        now = time.monotonic()
+        if self.last_pose_time is not None:
+            dt = now - self.last_pose_time
+            # Exponential moving average to smooth out jitter
+            if self.pose_interval is None:
+                self.pose_interval = dt
+            else:
+                self.pose_interval = 0.8 * self.pose_interval + 0.2 * dt
         self.current_pose = msg.pose
+        self.last_pose_time = now
+        if self.pose_lost_logged:
+            self.get_logger().info("Pose recovered.")
+            self.pose_lost_logged = False
 
     def _on_goal(self, msg: PoseStamped):
         if msg.header.frame_id != "field":
@@ -62,6 +80,21 @@ class GoToPoint(Node):
     def _control_loop(self):
         if self.current_pose is None or self.goal is None:
             return
+
+        # Failsafe: stop if pose data is stale (marker lost / robot out of frame)
+        if self.last_pose_time is not None and self.pose_interval is not None:
+            age = time.monotonic() - self.last_pose_time
+            timeout = self.pose_interval * self.missed_poses_limit
+            if age > timeout:
+                cmd = Twist()
+                self.cmd_pub.publish(cmd)
+                if not self.pose_lost_logged:
+                    self.get_logger().warn(
+                        f"Pose lost — {self.missed_poses_limit} messages missed "
+                        f"(interval ~{self.pose_interval:.3f}s) — stopping robot."
+                    )
+                    self.pose_lost_logged = True
+                return
 
         # Error vector in field frame
         dx_field = self.goal.x - self.current_pose.position.x
