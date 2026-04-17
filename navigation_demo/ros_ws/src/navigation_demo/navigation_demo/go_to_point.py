@@ -78,7 +78,9 @@ class GoToPoint(Node):
         )
 
     def _control_loop(self):
+        # Always publish zero velocity when idle to keep CAN bus in steady state
         if self.current_pose is None or self.goal is None:
+            self.cmd_pub.publish(Twist())
             return
 
         # Failsafe: stop if pose data is stale (marker lost / robot out of frame)
@@ -124,7 +126,7 @@ class GoToPoint(Node):
         # Proportional control, clamped to max speed
         speed = min(self.linear_gain * distance, self.max_linear_speed)
         cmd.linear.x = speed * (dx_body / distance)
-        cmd.linear.y = speed * (dy_body / distance)
+        cmd.linear.y = speed * (-dy_body / distance)  # negated: RoboMaster uses y-right
 
         self.cmd_pub.publish(cmd)
 
