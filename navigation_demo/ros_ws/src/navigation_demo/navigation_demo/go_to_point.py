@@ -124,7 +124,7 @@ class GoToPoint(Node):
         # Proportional control, clamped to max speed
         speed = min(self.linear_gain * distance, self.max_linear_speed)
         cmd.linear.x = speed * (dx_body / distance)
-        cmd.linear.y = speed * (dy_body / distance)
+        cmd.linear.y = speed * (-dy_body / distance)  # negated: RoboMaster uses y-right
 
         self.cmd_pub.publish(cmd)
 
