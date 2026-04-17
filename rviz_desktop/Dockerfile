@@ -39,6 +39,7 @@ ENV LIBGL_ALWAYS_SOFTWARE=1
 WORKDIR /ros_ws
 
 COPY rviz_entrypoint.sh /ros_ws/rviz_entrypoint.sh
+COPY multirobot_rviz.rviz /ros_ws/multirobot_rviz.rviz
 RUN chmod +x /ros_ws/rviz_entrypoint.sh
 
 
