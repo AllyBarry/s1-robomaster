@@ -8,8 +8,8 @@
             <Enable>false</Enable>
         </SharedMemory>
         <General>
-            <!-- Disable multicast discovery to prevent network flooding -->
-            <AllowMulticast>false</AllowMulticast>
+            <!-- Allow multicast for discovery only (SPDP), keep data transfer unicast -->
+            <AllowMulticast>spdp</AllowMulticast>
             <!-- Limit max participants to reduce discovery traffic -->
             <MaxAutoParticipantIndex>32</MaxAutoParticipantIndex>
         </General>
