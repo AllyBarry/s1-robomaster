@@ -18,6 +18,6 @@ services:
       - /tmp/.X11-unix:/tmp/.X11-unix:rw
       - ${HOME}/.Xauthority:/root/.Xauthority:ro
       - ./ros_ws/src:/ros_ws/src   
-    command: rviz2
+    command: ros2 run rviz2 rviz2 -d /ros_ws/multirobot_rviz.rviz
     restart: "no"
 
