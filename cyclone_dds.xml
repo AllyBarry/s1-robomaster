@@ -10,8 +10,6 @@
         <General>
             <!-- Allow multicast for discovery only (SPDP), keep data transfer unicast -->
             <AllowMulticast>spdp</AllowMulticast>
-            <!-- Limit max participants to reduce discovery traffic -->
-            <MaxAutoParticipantIndex>32</MaxAutoParticipantIndex>
         </General>
         <Discovery>
             <!-- Unicast peers: all Pis on WiFi (10.3.1.x) and ethernet (10.3.0.x) -->
