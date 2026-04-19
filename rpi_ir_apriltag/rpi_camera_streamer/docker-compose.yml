@@ -12,10 +12,12 @@ services:
       - /tmp/.X11-unix:/tmp/.X11-unix:rw
       - ${HOME}/.Xauthority:/root/.Xauthority:ro
       - ./camera_info:/root/.ros/camera_info
+      - ../../cyclone_dds.xml:/etc/cyclone_dds.xml:ro
     environment:
       - DISPLAY=${DISPLAY}
       - ROS_DOMAIN_ID=0
       - RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
+      - CYCLONEDDS_URI=/etc/cyclone_dds.xml
       - QT_X11_NO_MITSHM=1
     command: ros2 launch rpi_camera_streamer webcam.launch.py
     restart: "no"
@@ -31,10 +33,12 @@ services:
       - /tmp/.X11-unix:/tmp/.X11-unix:rw
       - ${HOME}/.Xauthority:/root/.Xauthority:ro
       - ./camera_info:/tmp/
+      - ../../cyclone_dds.xml:/etc/cyclone_dds.xml:ro
     environment:
       - DISPLAY=${DISPLAY}
       - ROS_DOMAIN_ID=0
       - RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
+      - CYCLONEDDS_URI=/etc/cyclone_dds.xml
       - QT_X11_NO_MITSHM=1
     command: >
       ros2 run camera_calibration cameracalibrator

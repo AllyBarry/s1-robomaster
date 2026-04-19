@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<CycloneDDS xmlns="https://cdds.io/config"
+            xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+            xsi:schemaLocation="https://cdds.io/config
+            https://raw.githubusercontent.com/eclipse-cyclonedds/cyclonedds/master/etc/cyclonedds.xsd">
+    <Domain id="any">
+        <SharedMemory>
+            <Enable>false</Enable>
+        </SharedMemory>
+        <General>
+            <!-- Disable multicast discovery to prevent network flooding -->
+            <AllowMulticast>false</AllowMulticast>
+            <!-- Limit max participants to reduce discovery traffic -->
+            <MaxAutoParticipantIndex>32</MaxAutoParticipantIndex>
+        </General>
+        <Discovery>
+            <!-- Unicast peers: all Pis on WiFi (10.3.1.x) and ethernet (10.3.0.x) -->
+            <!-- Adjust the peer list to match your actual robot fleet -->
+            <Peers>
+                <Peer address="192.168.1.19"/>
+                <Peer address="192.168.1.17"/>
+                <Peer address="192.168.1.12"/>
+                <!-- <Peer address="10.3.1.4"/>
+                <Peer address="10.3.1.5"/>
+                <Peer address="10.3.1.6"/>
+                <Peer address="10.3.1.7"/>
+                <Peer address="10.3.1.8"/>
+                <Peer address="10.3.1.9"/>
+                <Peer address="10.3.1.10"/>
+                <Peer address="10.3.0.3"/>
+                <Peer address="10.3.0.4"/>
+                <Peer address="10.3.0.5"/>
+                <Peer address="10.3.0.6"/>
+                <Peer address="10.3.0.7"/>
+                <Peer address="10.3.0.8"/>
+                <Peer address="10.3.0.9"/>
+                <Peer address="10.3.0.10"/> -->
+            </Peers>
+            <ParticipantIndex>auto</ParticipantIndex>
+        </Discovery>
+    </Domain>
+</CycloneDDS>

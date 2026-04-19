@@ -8,7 +8,9 @@ services:
     ipc: host
     volumes:
       - ./ros_ws/src:/ros_ws/src
+      - ../../cyclone_dds.xml:/etc/cyclone_dds.xml:ro
     environment:
       - ROS_DOMAIN_ID=0
       - RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
+      - CYCLONEDDS_URI=/etc/cyclone_dds.xml
     restart: "no"

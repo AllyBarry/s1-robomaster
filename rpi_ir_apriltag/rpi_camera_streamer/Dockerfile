@@ -33,6 +33,10 @@ RUN source /opt/ros/humble/setup.bash && \
 COPY entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 
+ENV ROS_DOMAIN_ID=0
+ENV RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
+ENV CYCLONEDDS_URI=/etc/cyclone_dds.xml
+
 ENTRYPOINT ["/entrypoint.sh"]
 # CMD ["ros2", "launch", "rpi_camera_streamer", "camera.launch.py"]
 CMD ["ros2", "launch", "rpi_camera_streamer", "webcam.launch.py"]
