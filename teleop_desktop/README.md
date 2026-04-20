@@ -30,7 +30,7 @@ Three modes are available in [docker-compose.yml](docker-compose.yml):
 
 This runs `xhost +local:docker` then `docker compose up --build teleop` (or `teleop-jetson`). In the GUI that opens, set the **Topic** field to `/robot_<ID>/cmd_vel` (e.g. `/robot_4/cmd_vel`) and drag the sliders to drive.
 
-The `--nvidia` / `--jetson` flag selects the L4T-compatible base image (`dustynv/ros:humble-pytorch-l4t-r35.3.1`) and runs the container with `--runtime nvidia`. Requires `nvidia-container-runtime` installed on the Jetson host (included in stock JetPack).
+The `--nvidia` / `--jetson` flag runs the container with `--runtime nvidia` for GPU passthrough. The base image (`ros:humble-ros-core`) is multi-arch — it pulls the arm64 variant automatically on a Jetson host, so no Jetson-specific image is needed for the teleop GUI itself. Requires JetPack 5+ (L4T r35+) and `nvidia-container-runtime` (included in stock JetPack).
 
 ### Full rqt dashboard
 
