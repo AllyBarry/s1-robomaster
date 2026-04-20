@@ -1,0 +1,38 @@
+version: "3.9"
+
+services:
+  teleop:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: teleop_gui
+    network_mode: host
+    ipc: host
+    environment:
+      - DISPLAY=${DISPLAY}
+      - ROS_DOMAIN_ID=0
+      - RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
+      - CYCLONEDDS_URI=/etc/cyclone_dds.xml
+      - QT_X11_NO_MITSHM=1
+    volumes:
+      - /tmp/.X11-unix:/tmp/.X11-unix:rw
+      - ${HOME}/.Xauthority:/root/.Xauthority:ro
+      - ../cyclone_dds.xml:/etc/cyclone_dds.xml:ro
+    restart: "no"
+
+  # Full rqt dashboard (use with: docker compose run --rm rqt)
+  rqt:
+    extends:
+      service: teleop
+    container_name: teleop_rqt
+    command: rqt
+
+  # Keyboard teleop (use with: docker compose run --rm keyboard)
+  # Requires interactive terminal - run with -it flags
+  keyboard:
+    extends:
+      service: teleop
+    container_name: teleop_keyboard
+    stdin_open: true
+    tty: true
+    command: ros2 run teleop_twist_keyboard teleop_twist_keyboard

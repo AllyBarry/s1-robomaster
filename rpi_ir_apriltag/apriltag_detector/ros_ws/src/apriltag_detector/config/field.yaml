@@ -1,10 +1,16 @@
 "/**":
   ros__parameters:
-    # IDs of the 36h11 corner tags (ordered: top-left, top-right, bottom-right, bottom-left)
-    corner_tag_ids: [0, 1, 2, 3]
+    # IDs of the 36h11 corner tags
+    # Physical layout (camera view, mounted overhead looking down):
+    #   tag 10 (top-left)      tag 12 (top-right)
+    #   tag 11 (bottom-left)   tag 13 (bottom-right)
+    corner_tag_ids: [10, 12, 13, 11]
 
     # Corresponding real-world field positions in meters, flattened [x0,y0, x1,y1, ...]
-    corner_tag_positions: [0.0, 0.0, 3.0, 0.0, 3.0, 2.0, 0.0, 2.0]
+    # Camera top = field +Y (far edge), bottom = field Y=0 (near edge)
+    # top-left=10:  (0, 2)   top-right=12:  (3, 2)
+    # bottom-right=11: (3, 0)  bottom-left=13: (0, 0)
+    corner_tag_positions: [0.0, 2.0, 3.0, 2.0, 3.0, 0.0, 0.0, 0.0]
 
     # Field dimensions (for reference / validation)
     field_width: 3.0

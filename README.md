@@ -212,6 +212,15 @@ ros2 topic echo /battery_state   # Battery level
 ros2 topic echo /wheel_speed     # Wheel encoders
 ```
 
+### Monitor Pi health
+```bash
+# Install the health monitor service (once per Pi)
+sudo ./setup_rasppi/install_health_monitor.bash
+
+# View live health logs (CPU load, memory, temperature, Docker memory)
+journalctl -u pi-health-monitor -f
+```
+
 ---
 
 ## Development Status

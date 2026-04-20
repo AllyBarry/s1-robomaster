@@ -1,7 +1,8 @@
 import math
+import time
 import rclpy
 from rclpy.node import Node
-from geometry_msgs.msg import PoseStamped, PointStamped, Twist
+from geometry_msgs.msg import PoseStamped, Twist
 
 
 class GoToPoint(Node):
@@ -11,24 +12,31 @@ class GoToPoint(Node):
         # Parameters
         self.declare_parameter("robot_id", 4)
         self.declare_parameter("linear_gain", 0.8)
-        self.declare_parameter("max_linear_speed", 0.5)
+        self.declare_parameter("max_linear_speed", 0.1)
         self.declare_parameter("goal_tolerance", 0.05)
+        self.declare_parameter("missed_poses_limit", 3)
 
         self.robot_id = self.get_parameter("robot_id").value
         self.linear_gain = self.get_parameter("linear_gain").value
         self.max_linear_speed = self.get_parameter("max_linear_speed").value
         self.goal_tolerance = self.get_parameter("goal_tolerance").value
+        self.missed_poses_limit = self.get_parameter("missed_poses_limit").value
 
         # State
         self.current_pose = None
         self.goal = None
+        self.last_pose_time = None
+        self.pose_interval = None  # estimated period between pose messages
+        self.pose_lost_logged = False
 
         # Subscribe to robot pose from field_localizer
         pose_topic = f"/field/robot_{self.robot_id}/pose"
         self.create_subscription(PoseStamped, pose_topic, self._on_pose, 10)
 
-        # Subscribe to clicked point from rviz "Publish Point" tool
-        self.create_subscription(PointStamped, "/clicked_point", self._on_goal, 10)
+        # Subscribe to 2D Goal Pose from rviz (Nav2 Goal tool)
+        # IMPORTANT: set rviz Fixed Frame to "field" so goal_pose
+        # coordinates are in the field frame
+        self.create_subscription(PoseStamped, "/goal_pose", self._on_goal, 10)
 
         # Publish velocity commands per robot
         cmd_topic = f"/robot_{self.robot_id}/cmd_vel"
@@ -43,36 +51,82 @@ class GoToPoint(Node):
         )
 
     def _on_pose(self, msg: PoseStamped):
+        now = time.monotonic()
+        if self.last_pose_time is not None:
+            dt = now - self.last_pose_time
+            # Exponential moving average to smooth out jitter
+            if self.pose_interval is None:
+                self.pose_interval = dt
+            else:
+                self.pose_interval = 0.8 * self.pose_interval + 0.2 * dt
         self.current_pose = msg.pose
+        self.last_pose_time = now
+        if self.pose_lost_logged:
+            self.get_logger().info("Pose recovered.")
+            self.pose_lost_logged = False
 
-    def _on_goal(self, msg: PointStamped):
-        self.goal = msg.point
+    def _on_goal(self, msg: PoseStamped):
+        if msg.header.frame_id != "field":
+            self.get_logger().warn(
+                f"Goal pose is in frame '{msg.header.frame_id}', "
+                f"expected 'field'. Set rviz Fixed Frame to 'field'."
+            )
+            return
+        self.goal = msg.pose.position
         self.get_logger().info(
             f"New goal: ({self.goal.x:.2f}, {self.goal.y:.2f})"
         )
 
     def _control_loop(self):
+        # Always publish zero velocity when idle to keep CAN bus in steady state
         if self.current_pose is None or self.goal is None:
+            self.cmd_pub.publish(Twist())
             return
 
-        dx = self.goal.x - self.current_pose.position.x
-        dy = self.goal.y - self.current_pose.position.y
-        distance = math.hypot(dx, dy)
+        # Failsafe: stop if pose data is stale (marker lost / robot out of frame)
+        if self.last_pose_time is not None and self.pose_interval is not None:
+            age = time.monotonic() - self.last_pose_time
+            timeout = self.pose_interval * self.missed_poses_limit
+            if age > timeout:
+                cmd = Twist()
+                self.cmd_pub.publish(cmd)
+                if not self.pose_lost_logged:
+                    self.get_logger().warn(
+                        f"Pose lost — {self.missed_poses_limit} messages missed "
+                        f"(interval ~{self.pose_interval:.3f}s) — stopping robot."
+                    )
+                    self.pose_lost_logged = True
+                return
+
+        # Error vector in field frame
+        dx_field = self.goal.x - self.current_pose.position.x
+        dy_field = self.goal.y - self.current_pose.position.y
+        distance = math.hypot(dx_field, dy_field)
 
         cmd = Twist()
 
         if distance < self.goal_tolerance:
-            # Goal reached — stop and clear
             self.cmd_pub.publish(cmd)
             if self.goal is not None:
                 self.get_logger().info("Goal reached!")
                 self.goal = None
             return
 
+        # Extract robot heading (yaw) from orientation quaternion
+        q = self.current_pose.orientation
+        yaw = math.atan2(2.0 * (q.w * q.z + q.x * q.y),
+                         1.0 - 2.0 * (q.y * q.y + q.z * q.z))
+
+        # Rotate field-frame error into robot body frame
+        cos_yaw = math.cos(yaw)
+        sin_yaw = math.sin(yaw)
+        dx_body = cos_yaw * dx_field + sin_yaw * dy_field
+        dy_body = -sin_yaw * dx_field + cos_yaw * dy_field
+
         # Proportional control, clamped to max speed
         speed = min(self.linear_gain * distance, self.max_linear_speed)
-        cmd.linear.x = speed * (dx / distance)
-        cmd.linear.y = speed * (dy / distance)
+        cmd.linear.x = speed * (dx_body / distance)
+        cmd.linear.y = speed * (-dy_body / distance)  # negated: RoboMaster uses y-right
 
         self.cmd_pub.publish(cmd)
 

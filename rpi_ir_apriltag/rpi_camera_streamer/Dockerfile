@@ -33,11 +33,15 @@ RUN source /opt/ros/humble/setup.bash && \
 COPY entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 
+ENV ROS_DOMAIN_ID=0
+ENV RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
+ENV CYCLONEDDS_URI=/etc/cyclone_dds.xml
+
 ENTRYPOINT ["/entrypoint.sh"]
 # CMD ["ros2", "launch", "rpi_camera_streamer", "camera.launch.py"]
 CMD ["ros2", "launch", "rpi_camera_streamer", "webcam.launch.py"]
 # CMD ["ros2", "run", "camera_calibration", "cameracalibrator", "--size", "4x6", "--square", "0.04", "--ros-args", "-r", "image:=/ir/image", "-r", "camera:=/ir"]
-# ros2 run camera_calibration cameracalibrator --size 4x6 --square  0.04 --ros-args -r image:=/ir/image -r camera:=/ir
+# ros2 run camera_calibration cameracalibrator --size 4x6 --square  0.04 --ros-args -r image:=/webcam/image_raw -r camera:=/webcam/image_info
 # ros2 launch rpi_camera_streamer  webcam.launch.py
 
 #ros2 run camera_calibration cameracalibrator \
@@ -46,4 +50,11 @@ CMD ["ros2", "launch", "rpi_camera_streamer", "webcam.launch.py"]
 #  --ros-args \
 #  -r image:=/webcam/image_raw \
 #  -r camera:=/webcam
+
+
+
+
+
+
+
 
