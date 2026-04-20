@@ -1,6 +1,6 @@
-# BASE_IMAGE selects between x86/standard and NVIDIA Jetson (L4T) base:
-#   default:  ros:humble-ros-core
-#   jetson:   dustynv/ros:humble-pytorch-l4t-r35.3.1
+# ros:humble-ros-core is multi-arch (amd64 + arm64) — works on x86 and Jetson alike.
+# The Jetson variant in docker-compose only differs by adding `runtime: nvidia` for
+# GPU passthrough; the base image stays the same.
 ARG BASE_IMAGE=ros:humble-ros-core
 FROM ${BASE_IMAGE}
 

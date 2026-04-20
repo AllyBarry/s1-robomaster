@@ -6,9 +6,7 @@ services:
       context: .
       dockerfile: Dockerfile
       network: host
-      args:
-        BASE_IMAGE: ${BASE_IMAGE:-ros:humble-ros-core}
-    image: teleop_desktop:${TELEOP_TAG:-x86}
+    image: teleop_desktop:latest
     container_name: teleop_gui
     network_mode: host
     ipc: host
@@ -24,12 +22,11 @@ services:
       - ../cyclone_dds.xml:/etc/cyclone_dds.xml:ro
     restart: "no"
 
-  # Jetson variant — uses L4T-compatible base image and NVIDIA runtime.
-  # Run with: BASE_IMAGE=dustynv/ros:humble-pytorch-l4t-r35.3.1 TELEOP_TAG=jetson docker compose up --build teleop-jetson
+  # Jetson variant — same image as teleop, adds nvidia runtime for GPU passthrough.
+  # Use with: ./run_teleop.sh --nvidia
   teleop-jetson:
     extends:
       service: teleop
-    image: teleop_desktop:jetson
     container_name: teleop_gui_jetson
     runtime: nvidia
     privileged: true

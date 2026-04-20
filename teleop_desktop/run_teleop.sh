@@ -9,16 +9,12 @@
 set -e
 
 SERVICE="teleop"
-export BASE_IMAGE="ros:humble-ros-core"
-export TELEOP_TAG="x86"
 
 for arg in "$@"; do
     case "$arg" in
         --nvidia|--jetson)
             SERVICE="teleop-jetson"
-            export BASE_IMAGE="dustynv/ros:humble-pytorch-l4t-r35.3.1"
-            export TELEOP_TAG="jetson"
-            echo "Running in NVIDIA Jetson mode (base: $BASE_IMAGE)"
+            echo "Running in NVIDIA Jetson mode (runtime: nvidia)"
             ;;
         -h|--help)
             echo "Usage: $0 [--nvidia]"
