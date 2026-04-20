@@ -1,26 +1,16 @@
-# ros:humble-ros-core is multi-arch (amd64 + arm64) — works on x86 and Jetson alike.
-# The Jetson variant in docker-compose only differs by adding `runtime: nvidia` for
-# GPU passthrough; the base image stays the same.
-ARG BASE_IMAGE=ros:humble-ros-core
-FROM ${BASE_IMAGE}
+FROM ros:humble-ros-base-jammy
 
 SHELL ["/bin/bash", "-c"]
 ENV DEBIAN_FRONTEND=noninteractive
 
-# Refresh ROS apt GPG key (rotated 2024-06) — old base images ship with expired key.
-# Purge any pre-existing ROS source lists to avoid Signed-By conflicts, then re-add
-# a single source pinned to the refreshed key.
-RUN rm -f /etc/apt/sources.list.d/ros*.list /etc/apt/sources.list.d/*ros2*.list && \
-    apt-get update && \
-    apt-get install -y --no-install-recommends curl gnupg ca-certificates && \
-    curl -sSL https://raw.githubusercontent.com/ros/rosdistro/master/ros.key \
-        -o /usr/share/keyrings/ros-archive-keyring.gpg.asc && \
-    gpg --dearmor < /usr/share/keyrings/ros-archive-keyring.gpg.asc \
-        > /usr/share/keyrings/ros-archive-keyring.gpg && \
-    rm /usr/share/keyrings/ros-archive-keyring.gpg.asc && \
-    . /etc/os-release && \
-    echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/ros-archive-keyring.gpg] http://packages.ros.org/ros2/ubuntu $UBUNTU_CODENAME main" \
-        > /etc/apt/sources.list.d/ros2.list
+RUN apt-get update && apt-get install -y \
+    ros-humble-rmw-cyclonedds-cpp \
+    build-essential \
+    cmake \
+    pkg-config \
+    python3-pip \
+    python3-colcon-common-extensions \
+    && rm -rf /var/lib/apt/lists/*
 
 # rqt + rqt_robot_steering (slider-based virtual joystick for cmd_vel)
 RUN apt-get update && apt-get install -y \
@@ -30,7 +20,6 @@ RUN apt-get update && apt-get install -y \
     ros-humble-rqt-topic \
     ros-humble-rqt-publisher \
     ros-humble-teleop-twist-keyboard \
-    ros-humble-rmw-cyclonedds-cpp \
     libxkbcommon-x11-0 \
     libxcb-cursor0 \
     x11-apps \
