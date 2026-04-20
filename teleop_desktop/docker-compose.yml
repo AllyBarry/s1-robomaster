@@ -5,6 +5,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+      network: host
       args:
         BASE_IMAGE: ${BASE_IMAGE:-ros:humble-ros-core}
     image: teleop_desktop:${TELEOP_TAG:-x86}
