@@ -1,4 +1,8 @@
-FROM ros:humble-ros-core
+# BASE_IMAGE selects between x86/standard and NVIDIA Jetson (L4T) base:
+#   default:  ros:humble-ros-core
+#   jetson:   dustynv/ros:humble-pytorch-l4t-r35.3.1
+ARG BASE_IMAGE=ros:humble-ros-core
+FROM ${BASE_IMAGE}
 
 SHELL ["/bin/bash", "-c"]
 ENV DEBIAN_FRONTEND=noninteractive
