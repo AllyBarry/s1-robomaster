@@ -12,28 +12,9 @@
             <AllowMulticast>spdp</AllowMulticast>
         </General>
         <Discovery>
-            <!-- Unicast peers: all Pis on WiFi (10.3.1.x) and ethernet (10.3.0.x) -->
-            <!-- Adjust the peer list to match your actual robot fleet -->
-            <Peers>
-                <Peer address="192.168.1.19"/>
-                <Peer address="192.168.1.17"/>
-                <Peer address="192.168.1.12"/>
-                <!-- <Peer address="10.3.1.4"/>
-                <Peer address="10.3.1.5"/>
-                <Peer address="10.3.1.6"/>
-                <Peer address="10.3.1.7"/>
-                <Peer address="10.3.1.8"/>
-                <Peer address="10.3.1.9"/>
-                <Peer address="10.3.1.10"/>
-                <Peer address="10.3.0.3"/>
-                <Peer address="10.3.0.4"/>
-                <Peer address="10.3.0.5"/>
-                <Peer address="10.3.0.6"/>
-                <Peer address="10.3.0.7"/>
-                <Peer address="10.3.0.8"/>
-                <Peer address="10.3.0.9"/>
-                <Peer address="10.3.0.10"/> -->
-            </Peers>
+            <!-- Using SPDP multicast for discovery; peers found automatically.
+                 Add <Peers><Peer address="x.x.x.x"/></Peers> here only if
+                 devices are on a different subnet where multicast doesn't reach. -->
             <ParticipantIndex>auto</ParticipantIndex>
         </Discovery>
     </Domain>
