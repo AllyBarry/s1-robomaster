@@ -17,6 +17,7 @@ setup(
     entry_points={
         "console_scripts": [
             "navigator = robot_navigator.navigator:main",
+            "follower = robot_navigator.follower:main",
         ],
     },
     install_requires=["setuptools"],

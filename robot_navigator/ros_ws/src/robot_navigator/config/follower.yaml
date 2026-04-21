@@ -1,0 +1,8 @@
+follower:
+  ros__parameters:
+    robot_id: 0
+    target_robot_id: 1
+    follow_distance: 0.5
+    publish_rate_hz: 5.0
+    stale_pose_timeout: 1.0
+    field_frame: "field"

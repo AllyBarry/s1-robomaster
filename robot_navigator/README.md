@@ -136,6 +136,47 @@ ros2 topic pub --once /robot_0/waypoint geometry_msgs/PointStamped \
   '{header: {frame_id: "field"}, point: {x: 1.0, y: 0.5}}'
 ```
 
+## Node: follower
+
+Follower node that generates a waypoint for `robot_id` based on the tracked
+position of another robot. The waypoint sits `follow_distance` metres from
+the leader along the line between leader and follower, so the follower
+naturally approaches to the configured separation and holds.
+
+It publishes to `/robot_{id}/waypoint`, so the robot's own `robot_navigator`
+instance must be running to act on the waypoint.
+
+**Subscriptions:**
+| Topic | Type | Description |
+|---|---|---|
+| `/field/robot_{robot_id}/pose` | `geometry_msgs/PoseStamped` | Follower's own pose |
+| `/field/robot_{target_robot_id}/pose` | `geometry_msgs/PoseStamped` | Leader pose to track |
+
+**Publications:**
+| Topic | Type | Description |
+|---|---|---|
+| `/robot_{robot_id}/waypoint` | `geometry_msgs/PointStamped` | Computed follow target |
+
+**Parameters** (see [config/follower.yaml](ros_ws/src/robot_navigator/config/follower.yaml)):
+| Parameter | Default | Description |
+|---|---|---|
+| `robot_id` | `0` | Follower's robot ID |
+| `target_robot_id` | `1` | Leader's robot ID |
+| `follow_distance` | `0.5` | Target separation (m) |
+| `publish_rate_hz` | `5.0` | Waypoint publish rate |
+| `stale_pose_timeout` | `1.0` | Pause if either pose is this old (s) |
+
+### Launching a follower
+
+```bash
+docker compose run --rm robot_navigator \
+  ros2 launch robot_navigator follower.launch.py \
+    robot_id:=2 target_robot_id:=1 follow_distance:=0.4
+```
+
+Run alongside a `navigator` instance for the same `robot_id` — the navigator
+consumes the waypoint and drives the robot.
+
 ### rviz displays
 
 With Fixed Frame set to `field`:
