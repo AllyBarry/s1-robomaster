@@ -2,7 +2,9 @@ version: "3.9"
 
 services:
   navigation_demo:
-    build: .
+    build: 
+      context: .
+      network: host
     container_name: navigation_demo
     network_mode: host
     ipc: host

@@ -2,7 +2,7 @@ import math
 import time
 import rclpy
 from rclpy.node import Node
-from geometry_msgs.msg import PoseStamped, Twist
+from geometry_msgs.msg import PoseStamped, Twist, TwistStamped
 
 
 class GoToPoint(Node):
@@ -28,6 +28,8 @@ class GoToPoint(Node):
         self.last_pose_time = None
         self.pose_interval = None  # estimated period between pose messages
         self.pose_lost_logged = False
+        self.predicted_pose = None  # best estimate, updated by camera + velocity
+        self.last_vel_time = None
 
         # Subscribe to robot pose from field_localizer
         pose_topic = f"/field/robot_{self.robot_id}/pose"
@@ -37,6 +39,10 @@ class GoToPoint(Node):
         # IMPORTANT: set rviz Fixed Frame to "field" so goal_pose
         # coordinates are in the field frame
         self.create_subscription(PoseStamped, "/goal_pose", self._on_goal, 10)
+
+        # Subscribe to chassis velocity for dead reckoning between camera frames
+        vel_topic = f"/robot_{self.robot_id}/vel"
+        self.create_subscription(TwistStamped, vel_topic, self._on_vel, 10)
 
         # Publish velocity commands per robot
         cmd_topic = f"/robot_{self.robot_id}/cmd_vel"
@@ -60,10 +66,41 @@ class GoToPoint(Node):
             else:
                 self.pose_interval = 0.8 * self.pose_interval + 0.2 * dt
         self.current_pose = msg.pose
+        # Snap predicted pose to camera ground truth, correcting any drift
+        self.predicted_pose = msg.pose
         self.last_pose_time = now
         if self.pose_lost_logged:
             self.get_logger().info("Pose recovered.")
             self.pose_lost_logged = False
+
+    def _on_vel(self, msg: TwistStamped):
+        """Dead reckoning: integrate chassis velocity to predict pose between camera frames."""
+        if self.predicted_pose is None:
+            return  # no camera fix yet, nothing to integrate from
+
+        now = time.monotonic()
+        if self.last_vel_time is not None:
+            dt = now - self.last_vel_time
+            # Body-frame velocity from wheel encoders
+            vbx = msg.twist.linear.x
+            vby = msg.twist.linear.y
+
+            # Extract yaw from predicted orientation
+            q = self.predicted_pose.orientation
+            yaw = math.atan2(2.0 * (q.w * q.z + q.x * q.y),
+                             1.0 - 2.0 * (q.y * q.y + q.z * q.z))
+
+            # Rotate body velocity into field frame
+            cos_yaw = math.cos(yaw)
+            sin_yaw = math.sin(yaw)
+            dx_field = vbx * cos_yaw - vby * sin_yaw
+            dy_field = vbx * sin_yaw + vby * cos_yaw
+
+            # Integrate position
+            self.predicted_pose.position.x += dx_field * dt
+            self.predicted_pose.position.y += dy_field * dt
+
+        self.last_vel_time = now
 
     def _on_goal(self, msg: PoseStamped):
         if msg.header.frame_id != "field":
@@ -79,11 +116,11 @@ class GoToPoint(Node):
 
     def _control_loop(self):
         # Always publish zero velocity when idle to keep CAN bus in steady state
-        if self.current_pose is None or self.goal is None:
+        if self.predicted_pose is None or self.goal is None:
             self.cmd_pub.publish(Twist())
             return
 
-        # Failsafe: stop if pose data is stale (marker lost / robot out of frame)
+        # Failsafe: stop if camera pose data is stale (marker lost / robot out of frame)
         if self.last_pose_time is not None and self.pose_interval is not None:
             age = time.monotonic() - self.last_pose_time
             timeout = self.pose_interval * self.missed_poses_limit
@@ -98,9 +135,9 @@ class GoToPoint(Node):
                     self.pose_lost_logged = True
                 return
 
-        # Error vector in field frame
-        dx_field = self.goal.x - self.current_pose.position.x
-        dy_field = self.goal.y - self.current_pose.position.y
+        # Error vector in field frame (using predicted pose, not stale camera pose)
+        dx_field = self.goal.x - self.predicted_pose.position.x
+        dy_field = self.goal.y - self.predicted_pose.position.y
         distance = math.hypot(dx_field, dy_field)
 
         cmd = Twist()
@@ -112,8 +149,8 @@ class GoToPoint(Node):
                 self.goal = None
             return
 
-        # Extract robot heading (yaw) from orientation quaternion
-        q = self.current_pose.orientation
+        # Extract robot heading (yaw) from predicted orientation
+        q = self.predicted_pose.orientation
         yaw = math.atan2(2.0 * (q.w * q.z + q.x * q.y),
                          1.0 - 2.0 * (q.y * q.y + q.z * q.z))
 
