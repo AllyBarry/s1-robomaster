@@ -2,7 +2,9 @@ version: "3.9"
 
 services:
   camera:
-    build: .
+    build:
+      context: .
+      network: host
     network_mode: host
     ipc: host
     privileged: true
@@ -23,7 +25,9 @@ services:
     restart: "no"
 
   calibrate:
-    build: .
+    build:
+      context: .
+      network: host
     network_mode: host
     ipc: host
     privileged: true
