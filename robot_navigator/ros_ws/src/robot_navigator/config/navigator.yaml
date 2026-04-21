@@ -1,0 +1,18 @@
+robot_navigator:
+  ros__parameters:
+    robot_id: 0
+    linear_gain: 0.8
+    angular_gain: 1.2
+    max_linear_speed: 0.5
+    max_angular_speed: 1.5
+    goal_tolerance: 0.05
+    angular_tolerance: 0.15
+    align_heading: false
+    control_rate_hz: 20.0
+    camera_pose_timeout: 1.0
+    camera_trust: 0.35
+    onboard_sensor_timeout: 0.3
+    vel_y_flip: true
+    attitude_yaw_offset: 0.0
+    attitude_yaw_bias_trust: 0.02
+    field_frame: "field"

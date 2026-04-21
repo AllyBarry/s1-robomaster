@@ -1,0 +1,44 @@
+# Domain bridge config — routes selected topics between domains.
+# Domain 10 = on-robot (private, high-rate sensor data stays here)
+# Domain 0  = network (external commands and throttled telemetry)
+#
+# ROBOT_ID is substituted by install.bash at setup time.
+
+name: robot_@ROBOT_ID@_gateway
+
+topics:
+  # ---- Inbound: external commands → robot ----
+  /robot_@ROBOT_ID@/cmd_vel:
+    type: geometry_msgs/msg/Twist
+    from_domain: 0
+    to_domain: 10
+
+  /robot_@ROBOT_ID@/cmd_wheels:
+    type: robomaster_msgs/msg/WheelSpeed
+    from_domain: 0
+    to_domain: 10
+
+  # ---- Outbound: selected telemetry → network ----
+  # Battery state — useful for remote monitoring, low rate
+  /robot_@ROBOT_ID@/battery_state:
+    type: sensor_msgs/msg/BatteryState
+    from_domain: 10
+    to_domain: 0
+
+  # High-rate topics (wheel_speed, vel, attitude) are intentionally NOT
+  # bridged here — they stay on domain 10 to keep WiFi uncongested.
+  # Uncomment below if you need them remotely, but consider throttling
+  # with topic_tools before bridging.
+  #
+  # /robot_@ROBOT_ID@/vel:
+  #   type: geometry_msgs/msg/TwistStamped
+  #   from_domain: 10
+  #   to_domain: 0
+  # /robot_@ROBOT_ID@/attitude:
+  #   type: geometry_msgs/msg/QuaternionStamped
+  #   from_domain: 10
+  #   to_domain: 0
+  # /robot_@ROBOT_ID@/wheel_speed:
+  #   type: robomaster_msgs/msg/WheelSpeed
+  #   from_domain: 10
+  #   to_domain: 0

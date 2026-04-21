@@ -10,6 +10,7 @@ ENV ROS_DOMAIN_ID=0
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
         ros-humble-rmw-cyclonedds-cpp \
+        ros-humble-domain-bridge \
         git \
         nano \
         vim \
