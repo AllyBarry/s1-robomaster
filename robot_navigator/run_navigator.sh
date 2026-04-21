@@ -10,6 +10,9 @@ if [ "$#" -eq 0 ]; then
 fi
 
 docker compose build
+# If build fails on Jetson with an iptables `raw` table error, run:
+#   DOCKER_BUILDKIT=0 docker build --network=host -t robot_navigator-robot_navigator .
+# or ensure `iptable_raw` is loaded: `sudo modprobe iptable_raw`
 
 for id in "$@"; do
     docker compose run --remove-orphans -d \

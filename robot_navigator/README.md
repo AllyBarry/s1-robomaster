@@ -84,6 +84,44 @@ Run one instance per robot:
 ./run_navigator.sh 0 1 2
 ```
 
+### Running on NVIDIA Jetson
+
+The `ros:humble-ros-base-jammy` base image is multi-arch and runs on arm64
+without modification. The build step, however, often fails on L4T kernels
+with:
+
+```
+iptables v1.8.7 (legacy): can't initialize iptables table `raw':
+Table does not exist (do you need to insmod?)
+```
+
+L4T's kernel ships without `iptable_raw`, so Docker can't configure its
+default bridge network during build. Two options:
+
+1. **Host-networked build** (already set in
+   [docker-compose.yml](docker-compose.yml) under `build.network: host`):
+
+   ```bash
+   docker compose build
+   ```
+
+   If that still fails (older docker-compose ignores the field), fall
+   back to a direct build:
+
+   ```bash
+   DOCKER_BUILDKIT=0 docker build --network=host -t robot_navigator-robot_navigator .
+   ```
+
+2. **Load the missing module** (works on some JetPack revisions):
+
+   ```bash
+   sudo modprobe iptable_raw
+   docker compose build
+   ```
+
+At runtime the service already uses `network_mode: host`, which also
+bypasses the broken bridge, so no runtime changes are needed.
+
 ### Publishing goals
 
 From rviz (Fixed Frame = `field`) or the command line:
