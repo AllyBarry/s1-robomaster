@@ -34,7 +34,7 @@ from rclpy.node import Node
 from geometry_msgs.msg import Point, PointStamped, PoseStamped, Vector3
 from nav_msgs.msg import OccupancyGrid
 from rcl_interfaces.msg import ParameterDescriptor
-from std_msgs.msg import ColorRGBA, Float32
+from std_msgs.msg import Bool, ColorRGBA, Float32
 from visualization_msgs.msg import Marker, MarkerArray
 
 
@@ -234,6 +234,9 @@ class BeliefNode(Node):
         self.declare_parameter("repulsion_weight", 5.0)
         self.declare_parameter("repulsion_radius", 0.4)
         self.declare_parameter("peer_pose_timeout", 1.0)
+        # Runtime kill-switch for the planner-layer repulsion penalty.
+        self.declare_parameter("repulsion_enabled", True)
+        self.declare_parameter("avoidance_toggle_topic", "/collision_avoidance_enabled")
 
         self.robot_id = int(self.get_parameter("robot_id").value)
         self.res = float(self.get_parameter("grid_resolution").value)
@@ -255,6 +258,8 @@ class BeliefNode(Node):
         self.rep_weight = float(self.get_parameter("repulsion_weight").value)
         self.rep_radius = float(self.get_parameter("repulsion_radius").value)
         self.peer_timeout = float(self.get_parameter("peer_pose_timeout").value)
+        self.rep_enabled = bool(self.get_parameter("repulsion_enabled").value)
+        avoid_toggle_topic = str(self.get_parameter("avoidance_toggle_topic").value)
 
         # Precomputed world-coord mesh for fast penalty evaluation.
         xs = self.ox + (np.arange(self.W) + 0.5) * self.res
@@ -295,6 +300,10 @@ class BeliefNode(Node):
                 lambda msg, i=pid: self._on_peer_pose(i, msg),
                 10,
             )
+
+        self.create_subscription(
+            Bool, avoid_toggle_topic, self._on_avoidance_toggle, 10
+        )
 
         self.unc_pub = self.create_publisher(
             OccupancyGrid, f"/robot_{self.robot_id}/belief/uncertainty", 1
@@ -337,12 +346,21 @@ class BeliefNode(Node):
         pos = np.array([msg.pose.position.x, msg.pose.position.y])
         self.peer_positions[pid] = (pos, time.monotonic())
 
+    def _on_avoidance_toggle(self, msg: Bool):
+        was = self.rep_enabled
+        self.rep_enabled = bool(msg.data)
+        if was != self.rep_enabled:
+            state = "ENABLED" if self.rep_enabled else "DISABLED"
+            self.get_logger().warn(f"Planner-layer repulsion {state}.")
+
     def _fresh_peer_positions(self) -> list[np.ndarray]:
         now = time.monotonic()
         return [p for p, t in self.peer_positions.values()
                 if now - t <= self.peer_timeout]
 
     def _peer_penalty_grid(self) -> np.ndarray | None:
+        if not self.rep_enabled:
+            return None
         peers = self._fresh_peer_positions()
         if not peers or self.rep_weight <= 0.0 or self.rep_radius <= 0.0:
             return None

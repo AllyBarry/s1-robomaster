@@ -11,7 +11,7 @@ from geometry_msgs.msg import (
     TwistStamped,
 )
 from rcl_interfaces.msg import ParameterDescriptor
-from std_msgs.msg import ColorRGBA
+from std_msgs.msg import Bool, ColorRGBA
 from visualization_msgs.msg import Marker
 
 
@@ -88,6 +88,10 @@ class RobotNavigator(Node):
         self.declare_parameter("avoidance_radius", 0.4)
         self.declare_parameter("avoidance_gain", 0.5)
         self.declare_parameter("peer_pose_timeout", 1.0)
+        # Runtime kill-switch for the reactive avoidance layer. Can also be
+        # toggled on /collision_avoidance_enabled (std_msgs/Bool).
+        self.declare_parameter("avoidance_enabled", True)
+        self.declare_parameter("avoidance_toggle_topic", "/collision_avoidance_enabled")
 
         self.robot_id = int(self.get_parameter("robot_id").value)
         self.linear_gain = float(self.get_parameter("linear_gain").value)
@@ -110,6 +114,8 @@ class RobotNavigator(Node):
         self.avoid_radius = float(self.get_parameter("avoidance_radius").value)
         self.avoid_gain = float(self.get_parameter("avoidance_gain").value)
         self.peer_pose_timeout = float(self.get_parameter("peer_pose_timeout").value)
+        self.avoidance_enabled = bool(self.get_parameter("avoidance_enabled").value)
+        avoid_toggle_topic = str(self.get_parameter("avoidance_toggle_topic").value)
 
         pose_topic = f"/field/robot_{self.robot_id}/pose"
         goal_pose_topic = f"/robot_{self.robot_id}/goal_pose"
@@ -136,6 +142,10 @@ class RobotNavigator(Node):
                 lambda msg, i=pid: self._on_peer_pose(i, msg),
                 10,
             )
+
+        self.create_subscription(
+            Bool, avoid_toggle_topic, self._on_avoidance_toggle, 10
+        )
 
         self.cmd_pub = self.create_publisher(Twist, cmd_topic, 10)
         self.estimate_pub = self.create_publisher(PoseStamped, estimate_topic, 10)
@@ -263,12 +273,22 @@ class RobotNavigator(Node):
             msg.pose.position.x, msg.pose.position.y, time.monotonic()
         )
 
+    def _on_avoidance_toggle(self, msg: Bool):
+        was = self.avoidance_enabled
+        self.avoidance_enabled = bool(msg.data)
+        if was != self.avoidance_enabled:
+            state = "ENABLED" if self.avoidance_enabled else "DISABLED"
+            self.get_logger().warn(f"Reactive collision avoidance {state}.")
+
     # ------------------------------------------------------------------ #
     # Reactive repulsion
     # ------------------------------------------------------------------ #
     def _repulsion_field_frame(self, now: float) -> tuple[float, float]:
         """Sum of linear-falloff repulsion vectors from fresh peers, field frame."""
-        if not self.peer_positions or self.avoid_gain <= 0.0 or self.avoid_radius <= 0.0:
+        if (not self.avoidance_enabled
+                or not self.peer_positions
+                or self.avoid_gain <= 0.0
+                or self.avoid_radius <= 0.0):
             return 0.0, 0.0
         ax, ay = 0.0, 0.0
         for px, py, stamp in self.peer_positions.values():
