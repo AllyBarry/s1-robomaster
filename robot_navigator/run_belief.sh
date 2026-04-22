@@ -74,6 +74,7 @@ echo ""
 echo "rviz displays (Fixed Frame = field):"
 echo "  Map        on /robot_${ROBOT_ID}/belief/uncertainty"
 echo "  Map        on /robot_${ROBOT_ID}/belief/gradient_mag"
+echo "  Map        on /robot_${ROBOT_ID}/belief/repulsion"
 echo "  MarkerArray on /robot_${ROBOT_ID}/belief/gradients"
 if [ "${WITH_WAYPOINTS}" = "true" ]; then
     echo ""

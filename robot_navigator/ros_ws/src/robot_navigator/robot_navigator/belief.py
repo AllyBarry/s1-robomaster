@@ -305,6 +305,9 @@ class BeliefNode(Node):
         self.grad_pub = self.create_publisher(
             MarkerArray, f"/robot_{self.robot_id}/belief/gradients", 10
         )
+        self.rep_pub = self.create_publisher(
+            OccupancyGrid, f"/robot_{self.robot_id}/belief/repulsion", 1
+        )
         self.waypoint_pub = self.create_publisher(
             PointStamped, f"/robot_{self.robot_id}/waypoint", 10
         )
@@ -396,6 +399,13 @@ class BeliefNode(Node):
             self.pos[0], self.pos[1], self.ox, self.oy, self.res, self.H, self.W
         )
         if cell is None:
+            self.get_logger().warn(
+                f"Robot pose ({self.pos[0]:.2f}, {self.pos[1]:.2f}) outside "
+                f"belief grid [{self.ox:.2f}, {self.ox + self.W * self.res:.2f}] × "
+                f"[{self.oy:.2f}, {self.oy + self.H * self.res:.2f}] — "
+                f"no waypoint will be published until pose is inside.",
+                throttle_duration_sec=5.0,
+            )
             return
         row, col = cell
 
@@ -438,6 +448,11 @@ class BeliefNode(Node):
         self._publish_occupancy(
             self.mag_pub, stamp, np.hypot(mu_x, mu_y)
         )
+
+        rep = self._peer_penalty_grid()
+        if rep is None:
+            rep = np.zeros((self.H, self.W))
+        self._publish_occupancy(self.rep_pub, stamp, rep)
 
         self._publish_gradient_arrows(stamp)
 
