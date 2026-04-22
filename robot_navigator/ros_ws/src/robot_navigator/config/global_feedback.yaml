@@ -1,0 +1,18 @@
+global_feedback:
+  ros__parameters:
+    robot_ids: [0, 1, 2]
+    # One of: line | triangle | circle | custom
+    formation: "triangle"
+    formation_center_x: 1.0
+    formation_center_y: 0.5
+    # Line: neighbour spacing. Triangle/circle: radius from centre.
+    formation_spacing: 0.5
+    formation_yaw: 0.0
+    # Only used when formation == "custom"; flat [x0, y0, x1, y1, ...].
+    targets_flat: [0.0]
+    # ordered: target i ↔ robot_ids[i]. nearest: each target → closest robot.
+    assignment: "nearest"
+    publish_rate_hz: 10.0
+    marker_rate_hz: 1.0
+    stale_pose_timeout: 2.0
+    field_frame: "field"

@@ -1,0 +1,19 @@
+version: "3.9"
+
+services:
+  robot_navigator:
+    build:
+      context: .
+      # Host networking during build avoids docker's bridge setup, which
+      # fails on Jetson/L4T kernels that lack the iptables `raw` table.
+      network: host
+    container_name: robot_navigator
+    network_mode: host
+    ipc: host
+    volumes:
+      - ../cyclone_dds.xml:/etc/cyclone_dds.xml:ro
+    environment:
+      - ROS_DOMAIN_ID=0
+      - RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
+      - CYCLONEDDS_URI=/etc/cyclone_dds.xml
+    restart: "no"

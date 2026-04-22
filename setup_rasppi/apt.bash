@@ -1,4 +1,34 @@
-apt update && \
+#!/usr/bin/env bash
+set -e
+
+if [[ $UID != 0 ]]; then
+    echo "Please run this script with sudo."
+    exit 1
+fi
+
+# --- Time sync (must come before apt update) ---
+# Raspberry Pi has no RTC — clock can be wrong on first boot,
+# causing "Release file is not valid yet" errors from apt.
+echo "Syncing system clock..."
+apt-get -o Acquire::Check-Valid-Until=false update -y
+apt-get install -y systemd-timesyncd fake-hwclock
+timedatectl set-ntp true
+
+# fake-hwclock persists the time across reboots so it's approximately
+# correct on next boot even without network access.
+systemctl enable fake-hwclock
+fake-hwclock save
+
+# Block boot until NTP has synced time (prevents services from starting
+# with wrong time and getting certificate / apt validity errors).
+systemctl enable systemd-time-wait-sync.service
+
+# Wait briefly for NTP to adjust the clock
+sleep 2
+echo "System time: $(date)"
+
+# --- Base packages ---
+apt-get update && \
 apt-get -y install vim cmake tmux
 
 cd /tmp

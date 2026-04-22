@@ -16,6 +16,10 @@
                  Add <Peers><Peer address="x.x.x.x"/></Peers> here only if
                  devices are on a different subnet where multicast doesn't reach. -->
             <ParticipantIndex>auto</ParticipantIndex>
+            <!-- Default is 9 (10 slots), which is exhausted once we run the
+                 bridge, navigator, follower, rviz, apriltag_detector, etc. on
+                 one host. 100 gives plenty of headroom with no real cost. -->
+            <MaxAutoParticipantIndex>100</MaxAutoParticipantIndex>
         </Discovery>
     </Domain>
 </CycloneDDS>

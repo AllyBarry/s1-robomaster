@@ -22,15 +22,6 @@ services:
       - ../cyclone_dds.xml:/etc/cyclone_dds.xml:ro
     restart: "no"
 
-  # Jetson variant — same image as teleop, adds nvidia runtime for GPU passthrough.
-  # Use with: ./run_teleop.sh --nvidia
-  teleop-jetson:
-    extends:
-      service: teleop
-    container_name: teleop_gui_jetson
-    runtime: nvidia
-    privileged: true
-
   # Full rqt dashboard (use with: docker compose run --rm rqt)
   rqt:
     extends:
