@@ -33,6 +33,7 @@ from rclpy.node import Node
 
 from geometry_msgs.msg import Point, PointStamped, PoseStamped, Vector3
 from nav_msgs.msg import OccupancyGrid
+from rcl_interfaces.msg import ParameterDescriptor, ParameterType
 from std_msgs.msg import ColorRGBA, Float32
 from visualization_msgs.msg import Marker, MarkerArray
 
@@ -226,7 +227,10 @@ class BeliefNode(Node):
         self.declare_parameter("random_seed", 42)
         # Peer-aware collision avoidance at the planner layer: each peer's
         # position contributes a Gaussian penalty to candidate cells.
-        self.declare_parameter("peer_robot_ids", [])
+        self.declare_parameter(
+            "peer_robot_ids", [],
+            ParameterDescriptor(type=ParameterType.PARAMETER_INTEGER_ARRAY),
+        )
         self.declare_parameter("repulsion_weight", 5.0)
         self.declare_parameter("repulsion_radius", 0.4)
         self.declare_parameter("peer_pose_timeout", 1.0)
