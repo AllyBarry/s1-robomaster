@@ -76,6 +76,14 @@ class RobotNavigator(Node):
         # bias over time. Set to 0.0 to freeze the offset.
         self.declare_parameter("attitude_yaw_bias_trust", 0.02)
         self.declare_parameter("field_frame", "field")
+        # Peer-aware reactive repulsion: list of other robot IDs to subscribe
+        # to for /field/robot_{pid}/pose. Each peer within avoidance_radius
+        # adds a velocity push away from itself, falling off linearly to zero
+        # at the radius.
+        self.declare_parameter("peer_robot_ids", [])
+        self.declare_parameter("avoidance_radius", 0.4)
+        self.declare_parameter("avoidance_gain", 0.5)
+        self.declare_parameter("peer_pose_timeout", 1.0)
 
         self.robot_id = int(self.get_parameter("robot_id").value)
         self.linear_gain = float(self.get_parameter("linear_gain").value)
@@ -93,6 +101,11 @@ class RobotNavigator(Node):
         self.attitude_yaw_offset = float(self.get_parameter("attitude_yaw_offset").value)
         self.attitude_bias_trust = float(self.get_parameter("attitude_yaw_bias_trust").value)
         self.field_frame = str(self.get_parameter("field_frame").value)
+        peer_ids_raw = self.get_parameter("peer_robot_ids").value or []
+        self.peer_ids = [int(v) for v in peer_ids_raw if int(v) != self.robot_id]
+        self.avoid_radius = float(self.get_parameter("avoidance_radius").value)
+        self.avoid_gain = float(self.get_parameter("avoidance_gain").value)
+        self.peer_pose_timeout = float(self.get_parameter("peer_pose_timeout").value)
 
         pose_topic = f"/field/robot_{self.robot_id}/pose"
         goal_pose_topic = f"/robot_{self.robot_id}/goal_pose"
@@ -109,6 +122,16 @@ class RobotNavigator(Node):
         self.create_subscription(PointStamped, waypoint_topic, self._on_waypoint, 10)
         self.create_subscription(TwistStamped, vel_topic, self._on_vel, 20)
         self.create_subscription(QuaternionStamped, attitude_topic, self._on_attitude, 20)
+
+        # Peer pose cache: {pid: (x, y, monotonic_stamp)}.
+        self.peer_positions: dict[int, tuple[float, float, float]] = {}
+        for pid in self.peer_ids:
+            self.create_subscription(
+                PoseStamped,
+                f"/field/robot_{pid}/pose",
+                lambda msg, i=pid: self._on_peer_pose(i, msg),
+                10,
+            )
 
         self.cmd_pub = self.create_publisher(Twist, cmd_topic, 10)
         self.estimate_pub = self.create_publisher(PoseStamped, estimate_topic, 10)
@@ -231,6 +254,32 @@ class RobotNavigator(Node):
         self.meas_imu_yaw = _yaw_from_quat(msg.quaternion)
         self.last_att_time = time.monotonic()
 
+    def _on_peer_pose(self, pid: int, msg: PoseStamped):
+        self.peer_positions[pid] = (
+            msg.pose.position.x, msg.pose.position.y, time.monotonic()
+        )
+
+    # ------------------------------------------------------------------ #
+    # Reactive repulsion
+    # ------------------------------------------------------------------ #
+    def _repulsion_field_frame(self, now: float) -> tuple[float, float]:
+        """Sum of linear-falloff repulsion vectors from fresh peers, field frame."""
+        if not self.peer_positions or self.avoid_gain <= 0.0 or self.avoid_radius <= 0.0:
+            return 0.0, 0.0
+        ax, ay = 0.0, 0.0
+        for px, py, stamp in self.peer_positions.values():
+            if now - stamp > self.peer_pose_timeout:
+                continue
+            dx = self.est_x - px
+            dy = self.est_y - py
+            d = math.hypot(dx, dy)
+            if d < 1e-4 or d >= self.avoid_radius:
+                continue
+            mag = self.avoid_gain * (1.0 - d / self.avoid_radius)
+            ax += mag * dx / d
+            ay += mag * dy / d
+        return ax, ay
+
     # ------------------------------------------------------------------ #
     # Freshness checks
     # ------------------------------------------------------------------ #
@@ -339,6 +388,19 @@ class RobotNavigator(Node):
             speed = min(self.linear_gain * distance, self.max_linear_speed)
             vx_body = speed * (dx_body / distance)
             vy_body = speed * (dy_body / distance)
+
+        # Reactive peer repulsion: push away from any neighbor within radius.
+        ax_field, ay_field = self._repulsion_field_frame(now)
+        if ax_field != 0.0 or ay_field != 0.0:
+            ax_body = cos_y * ax_field + sin_y * ay_field
+            ay_body = -sin_y * ax_field + cos_y * ay_field
+            vx_body += ax_body
+            vy_body += ay_body
+            mag = math.hypot(vx_body, vy_body)
+            if mag > self.max_linear_speed:
+                scale = self.max_linear_speed / mag
+                vx_body *= scale
+                vy_body *= scale
 
         wz = 0.0
         if gyaw is not None and not at_heading:

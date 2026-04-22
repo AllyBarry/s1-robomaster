@@ -25,6 +25,7 @@ drive to. Otherwise it's purely a belief-visualisation node.
 
 import math
 import random
+import time
 
 import numpy as np
 import rclpy
@@ -144,17 +145,35 @@ ACTION_DCOL = [0, 0, -1, 1]
 INVALID = -1e9
 
 
-def ucb_select(dx_mu, dx_sig, dy_mu, dy_sig, row, col, alpha=1.0, beta=1.0):
+def ucb_select(dx_mu, dx_sig, dy_mu, dy_sig, row, col, alpha=1.0, beta=1.0,
+               penalty=None):
+    """
+    4-connected UCB action selection. `penalty`, if given, is an HxW array of
+    non-negative costs subtracted from each action's score at the *destination*
+    cell — used to implement peer repulsion at the planner layer.
+    """
     H, W = dx_mu.shape
     ucb = np.full(4, INVALID)
     if row > 0:
-        ucb[0] = alpha * (-dy_mu[row - 1, col]) + beta * dy_sig[row - 1, col]
+        s = alpha * (-dy_mu[row - 1, col]) + beta * dy_sig[row - 1, col]
+        if penalty is not None:
+            s -= penalty[row - 1, col]
+        ucb[0] = s
     if row < H - 1:
-        ucb[1] = alpha * dy_mu[row, col] + beta * dy_sig[row, col]
+        s = alpha * dy_mu[row, col] + beta * dy_sig[row, col]
+        if penalty is not None:
+            s -= penalty[row + 1, col]
+        ucb[1] = s
     if col > 0:
-        ucb[2] = alpha * (-dx_mu[row, col - 1]) + beta * dx_sig[row, col - 1]
+        s = alpha * (-dx_mu[row, col - 1]) + beta * dx_sig[row, col - 1]
+        if penalty is not None:
+            s -= penalty[row, col - 1]
+        ucb[2] = s
     if col < W - 1:
-        ucb[3] = alpha * dx_mu[row, col] + beta * dx_sig[row, col]
+        s = alpha * dx_mu[row, col] + beta * dx_sig[row, col]
+        if penalty is not None:
+            s -= penalty[row, col + 1]
+        ucb[3] = s
     max_val = np.max(ucb)
     candidates = np.flatnonzero(ucb == max_val)
     return int(random.choice(candidates)), ucb
@@ -205,6 +224,12 @@ class BeliefNode(Node):
         self.declare_parameter("waypoint_tolerance", 0.15)
         self.declare_parameter("gradient_subsample", 1)
         self.declare_parameter("random_seed", 42)
+        # Peer-aware collision avoidance at the planner layer: each peer's
+        # position contributes a Gaussian penalty to candidate cells.
+        self.declare_parameter("peer_robot_ids", [])
+        self.declare_parameter("repulsion_weight", 5.0)
+        self.declare_parameter("repulsion_radius", 0.4)
+        self.declare_parameter("peer_pose_timeout", 1.0)
 
         self.robot_id = int(self.get_parameter("robot_id").value)
         self.res = float(self.get_parameter("grid_resolution").value)
@@ -221,6 +246,16 @@ class BeliefNode(Node):
         self.gradient_subsample = max(
             1, int(self.get_parameter("gradient_subsample").value)
         )
+        peer_ids_raw = self.get_parameter("peer_robot_ids").value or []
+        self.peer_ids = [int(v) for v in peer_ids_raw if int(v) != self.robot_id]
+        self.rep_weight = float(self.get_parameter("repulsion_weight").value)
+        self.rep_radius = float(self.get_parameter("repulsion_radius").value)
+        self.peer_timeout = float(self.get_parameter("peer_pose_timeout").value)
+
+        # Precomputed world-coord mesh for fast penalty evaluation.
+        xs = self.ox + (np.arange(self.W) + 0.5) * self.res
+        ys = self.oy + (np.arange(self.H) + 0.5) * self.res
+        self._grid_X, self._grid_Y = np.meshgrid(xs, ys)
 
         self.model = GradientFieldRFFBLR(
             H=self.H, W=self.W,
@@ -241,10 +276,21 @@ class BeliefNode(Node):
 
         self.waypoint_cell: tuple[int, int] | None = None
 
+        # Peer position cache: {robot_id: (pos, stamp_monotonic)}.
+        self.peer_positions: dict[int, tuple[np.ndarray, float]] = {}
+
         self.create_subscription(
             PoseStamped, f"/field/robot_{self.robot_id}/pose", self._on_pose, 10
         )
         self.create_subscription(Float32, "/global_reward", self._on_reward, 10)
+
+        for pid in self.peer_ids:
+            self.create_subscription(
+                PoseStamped,
+                f"/field/robot_{pid}/pose",
+                lambda msg, i=pid: self._on_peer_pose(i, msg),
+                10,
+            )
 
         self.unc_pub = self.create_publisher(
             OccupancyGrid, f"/robot_{self.robot_id}/belief/uncertainty", 1
@@ -279,6 +325,26 @@ class BeliefNode(Node):
 
     def _on_reward(self, msg: Float32):
         self.current_reward = float(msg.data)
+
+    def _on_peer_pose(self, pid: int, msg: PoseStamped):
+        pos = np.array([msg.pose.position.x, msg.pose.position.y])
+        self.peer_positions[pid] = (pos, time.monotonic())
+
+    def _fresh_peer_positions(self) -> list[np.ndarray]:
+        now = time.monotonic()
+        return [p for p, t in self.peer_positions.values()
+                if now - t <= self.peer_timeout]
+
+    def _peer_penalty_grid(self) -> np.ndarray | None:
+        peers = self._fresh_peer_positions()
+        if not peers or self.rep_weight <= 0.0 or self.rep_radius <= 0.0:
+            return None
+        denom = 2.0 * self.rep_radius * self.rep_radius
+        penalty = np.zeros((self.H, self.W))
+        for p in peers:
+            d2 = (self._grid_X - p[0]) ** 2 + (self._grid_Y - p[1]) ** 2
+            penalty += self.rep_weight * np.exp(-d2 / denom)
+        return penalty
 
     # ------------------------------------------------------------------ #
     #  Belief update
@@ -337,9 +403,11 @@ class BeliefNode(Node):
 
         dx_mu, dy_mu = self.model.gradient_grids()
         dx_sig, dy_sig = self.model.sigma_grids()
+        penalty = self._peer_penalty_grid()
         action, _ = ucb_select(
             dx_mu, dx_sig, dy_mu, dy_sig, row, col,
             alpha=self.ucb_alpha, beta=self.ucb_beta,
+            penalty=penalty,
         )
         new_row = max(0, min(self.H - 1, row + ACTION_DROW[action]))
         new_col = max(0, min(self.W - 1, col + ACTION_DCOL[action]))

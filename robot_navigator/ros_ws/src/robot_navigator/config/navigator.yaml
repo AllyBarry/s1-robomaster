@@ -16,3 +16,10 @@ robot_navigator:
     attitude_yaw_offset: 0.0
     attitude_yaw_bias_trust: 0.02
     field_frame: "field"
+    # Reactive peer repulsion. Populate peer_robot_ids (via launch arg or
+    # here directly) to subscribe to other robots' /field poses and deflect
+    # cmd_vel away when a peer enters avoidance_radius (linear falloff to 0).
+    peer_robot_ids: []
+    avoidance_radius: 0.4
+    avoidance_gain: 0.5
+    peer_pose_timeout: 1.0

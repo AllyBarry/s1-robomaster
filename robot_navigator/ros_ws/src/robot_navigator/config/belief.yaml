@@ -28,3 +28,12 @@ belief_node:
     # Draw a gradient arrow for every Nth cell. 1 = all cells.
     gradient_subsample: 1
     random_seed: 42
+    # Peer-aware collision avoidance: list of *other* robot IDs whose
+    # /field/robot_{pid}/pose we subscribe to. Each peer subtracts a
+    # Gaussian penalty from candidate cells during UCB selection.
+    # repulsion_radius is the 1-σ radius (m); repulsion_weight is the
+    # peak penalty value added at a peer's current cell.
+    peer_robot_ids: []
+    repulsion_weight: 5.0
+    repulsion_radius: 0.4
+    peer_pose_timeout: 1.0

@@ -5,12 +5,13 @@
 # running for that to actually drive the robot).
 #
 # Usage:
-#   ./run_belief.sh [--rebuild] <robot_id> [--with-waypoints]
+#   ./run_belief.sh [--rebuild] <robot_id> [--with-waypoints] [--peers 1,2]
 #
 # Examples:
-#   ./run_belief.sh 0                      # viz-only belief for robot 0
-#   ./run_belief.sh 0 --with-waypoints     # viz + UCB waypoints
-#   ./run_belief.sh --rebuild 0            # force image rebuild first
+#   ./run_belief.sh 0                            # viz-only belief for robot 0
+#   ./run_belief.sh 0 --with-waypoints           # viz + UCB waypoints
+#   ./run_belief.sh 0 --with-waypoints --peers 1,2   # add repulsion from 1 and 2
+#   ./run_belief.sh --rebuild 0                  # force image rebuild first
 
 set -e
 
@@ -21,7 +22,7 @@ if [ "$1" = "--rebuild" ] || [ "$1" = "-r" ]; then
 fi
 
 if [ "$#" -lt 1 ]; then
-    echo "Usage: $0 [--rebuild] <robot_id> [--with-waypoints]"
+    echo "Usage: $0 [--rebuild] <robot_id> [--with-waypoints] [--peers <csv>]"
     exit 1
 fi
 
@@ -29,13 +30,19 @@ ROBOT_ID="$1"
 shift
 
 WITH_WAYPOINTS="false"
-for arg in "$@"; do
-    case "${arg}" in
+PEERS=""
+while [ "$#" -gt 0 ]; do
+    case "$1" in
         --with-waypoints|-w)
             WITH_WAYPOINTS="true"
+            shift
+            ;;
+        --peers|-p)
+            PEERS="$2"
+            shift 2
             ;;
         *)
-            echo "Unknown argument: ${arg}"
+            echo "Unknown argument: $1"
             exit 1
             ;;
     esac
@@ -59,7 +66,8 @@ docker compose run --remove-orphans -d \
     robot_navigator \
     ros2 launch robot_navigator belief.launch.py \
         robot_id:=${ROBOT_ID} \
-        publish_waypoints:=${WITH_WAYPOINTS}
+        publish_waypoints:=${WITH_WAYPOINTS} \
+        peer_robot_ids:=${PEERS}
 
 echo "Started ${CONTAINER_NAME} — follow with: docker logs -f ${CONTAINER_NAME}"
 echo ""
@@ -71,4 +79,7 @@ if [ "${WITH_WAYPOINTS}" = "true" ]; then
     echo ""
     echo "Waypoint publishing enabled — start navigator for robot ${ROBOT_ID}:"
     echo "  ./run_navigator.sh ${ROBOT_ID}"
+fi
+if [ -n "${PEERS}" ]; then
+    echo "Peer repulsion active against robot(s): ${PEERS}"
 fi
