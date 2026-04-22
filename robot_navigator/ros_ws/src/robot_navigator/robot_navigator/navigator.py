@@ -10,7 +10,7 @@ from geometry_msgs.msg import (
     Twist,
     TwistStamped,
 )
-from rcl_interfaces.msg import ParameterDescriptor, ParameterType
+from rcl_interfaces.msg import ParameterDescriptor
 from std_msgs.msg import ColorRGBA
 from visualization_msgs.msg import Marker
 
@@ -83,7 +83,7 @@ class RobotNavigator(Node):
         # at the radius.
         self.declare_parameter(
             "peer_robot_ids", [],
-            ParameterDescriptor(type=ParameterType.PARAMETER_INTEGER_ARRAY),
+            ParameterDescriptor(dynamic_typing=True),
         )
         self.declare_parameter("avoidance_radius", 0.4)
         self.declare_parameter("avoidance_gain", 0.5)

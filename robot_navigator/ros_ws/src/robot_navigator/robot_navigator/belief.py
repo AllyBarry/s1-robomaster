@@ -33,7 +33,7 @@ from rclpy.node import Node
 
 from geometry_msgs.msg import Point, PointStamped, PoseStamped, Vector3
 from nav_msgs.msg import OccupancyGrid
-from rcl_interfaces.msg import ParameterDescriptor, ParameterType
+from rcl_interfaces.msg import ParameterDescriptor
 from std_msgs.msg import ColorRGBA, Float32
 from visualization_msgs.msg import Marker, MarkerArray
 
@@ -229,7 +229,7 @@ class BeliefNode(Node):
         # position contributes a Gaussian penalty to candidate cells.
         self.declare_parameter(
             "peer_robot_ids", [],
-            ParameterDescriptor(type=ParameterType.PARAMETER_INTEGER_ARRAY),
+            ParameterDescriptor(dynamic_typing=True),
         )
         self.declare_parameter("repulsion_weight", 5.0)
         self.declare_parameter("repulsion_radius", 0.4)
