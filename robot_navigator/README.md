@@ -177,6 +177,64 @@ docker compose run --rm robot_navigator \
 Run alongside a `navigator` instance for the same `robot_id` — the navigator
 consumes the waypoint and drives the robot.
 
+## Node: global_feedback
+
+Publishes a scalar signal describing how well a team of robots matches a
+pre-configured formation in the field. Mirrors the simulator's
+`global_reward_node` but against `/field/robot_{id}/pose` and rendered in
+the `field` frame.
+
+The reward is `-sum(distance(robot, target))` — zero when every target has a
+robot on it, more negative as robots drift away. Higher is better.
+
+**Subscriptions:**
+| Topic | Type | Description |
+|---|---|---|
+| `/field/robot_{id}/pose` | `geometry_msgs/PoseStamped` | Live pose per configured robot |
+
+**Publications:**
+| Topic | Type | Description |
+|---|---|---|
+| `/global_reward` | `std_msgs/Float32` | Negative total distance from targets |
+| `/target_markers` | `visualization_msgs/MarkerArray` | Green cylinders + labels at each target (display in rviz) |
+
+**Parameters** (see [config/global_feedback.yaml](ros_ws/src/robot_navigator/config/global_feedback.yaml)):
+| Parameter | Default | Description |
+|---|---|---|
+| `robot_ids` | `[0, 1, 2]` | Robots included in the formation |
+| `formation` | `"triangle"` | `line` \| `triangle` \| `circle` \| `custom` |
+| `formation_center_x` / `_y` | `0.0` | Centre of the formation (field coords) |
+| `formation_spacing` | `0.5` | Line step size, or ring radius |
+| `formation_yaw` | `0.0` | Rotate the whole formation (rad) |
+| `targets_flat` | — | Flat `[x0, y0, x1, y1, ...]` for `formation: custom` |
+| `assignment` | `"ordered"` | `ordered` = target i ↔ `robot_ids[i]`; `nearest` = each target takes its closest robot |
+| `publish_rate_hz` | `10.0` | Reward publish rate |
+| `marker_rate_hz` | `1.0` | Target-marker refresh rate |
+| `stale_pose_timeout` | `2.0` | Skip publish if any pose is this old (s) |
+
+### Launching
+
+```bash
+# Triangle formation, ordered assignment (default)
+docker compose run --rm robot_navigator \
+  ros2 launch robot_navigator global_feedback.launch.py \
+    formation:=triangle formation_spacing:=0.6
+
+# Line of 3 robots
+docker compose run --rm robot_navigator \
+  ros2 launch robot_navigator global_feedback.launch.py \
+    formation:=line formation_spacing:=0.4
+```
+
+### Live monitoring
+
+```bash
+ros2 topic echo /global_reward
+```
+
+In rviz add a **MarkerArray** display on `/target_markers` with Fixed Frame
+`field` to see the configured positions.
+
 ### rviz displays
 
 With Fixed Frame set to `field`:

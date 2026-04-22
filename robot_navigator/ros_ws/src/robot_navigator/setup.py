@@ -18,6 +18,7 @@ setup(
         "console_scripts": [
             "navigator = robot_navigator.navigator:main",
             "follower = robot_navigator.follower:main",
+            "global_feedback = robot_navigator.global_feedback:main",
         ],
     },
     install_requires=["setuptools"],
