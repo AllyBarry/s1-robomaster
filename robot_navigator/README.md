@@ -235,6 +235,73 @@ ros2 topic echo /global_reward
 In rviz add a **MarkerArray** display on `/target_markers` with Fixed Frame
 `field` to see the configured positions.
 
+## Node: belief
+
+Per-robot Bayesian belief over the `/global_reward` landscape using Random
+Fourier Features + online Bayesian Linear Regression. Pure-NumPy port of
+the sim's `belief_node` — no torch, runs fine on Pi/Jetson.
+
+Each time the robot has moved `displacement_threshold` metres, the node
+decomposes the change in `/global_reward` along the displacement vector
+into a 2-D gradient observation and feeds it into two independent BLRs
+(x- and y-components) at the source grid cell.
+
+**Subscriptions:**
+| Topic | Type | Description |
+|---|---|---|
+| `/field/robot_{id}/pose` | `geometry_msgs/PoseStamped` | Robot's position in the field |
+| `/global_reward` | `std_msgs/Float32` | Scalar feedback from `global_feedback` |
+
+**Publications:**
+| Topic | Type | Description |
+|---|---|---|
+| `/robot_{id}/belief/uncertainty` | `nav_msgs/OccupancyGrid` | σ heatmap across the grid |
+| `/robot_{id}/belief/gradient_mag` | `nav_msgs/OccupancyGrid` | ‖∇reward‖ heatmap |
+| `/robot_{id}/belief/gradients` | `visualization_msgs/MarkerArray` | Arrow field of mean gradients |
+| `/robot_{id}/waypoint` | `geometry_msgs/PointStamped` | UCB-selected target cell (only when `publish_waypoints:=true`) |
+
+**Parameters** (see [config/belief.yaml](ros_ws/src/robot_navigator/config/belief.yaml)):
+| Parameter | Default | Description |
+|---|---|---|
+| `robot_id` | `0` | Robot being tracked |
+| `grid_resolution` | `0.2` | Cell size (m) |
+| `grid_origin_x` / `_y` | `-1.5` | Bottom-left corner of grid in field coords |
+| `grid_width` / `_height` | `15` | Cells per side (15×15 × 0.2 m = 3 m × 3 m) |
+| `displacement_threshold` | `0.25` | Move this far before adding a sample (m) |
+| `num_features` | `256` | RFF basis size |
+| `lengthscale` | `0.6` | RBF kernel length scale |
+| `prior_std`, `noise_std` | `1.0`, `0.5` | Prior / observation noise std dev |
+| `forgetting` | `0.999` | BLR forgetting factor (<1 = adapt to drifting reward) |
+| `publish_waypoints` | `false` | Emit UCB-chosen waypoints for the navigator |
+| `ucb_alpha`, `ucb_beta` | `1.0`, `10.0` | UCB exploit/explore weights |
+
+### Run for a single robot (test mode)
+
+```bash
+./run_belief.sh 0                   # belief visualisation only
+./run_belief.sh 0 --with-waypoints  # belief + UCB waypoints
+./run_belief.sh --rebuild 0         # force clean image rebuild
+```
+
+The belief node needs `global_feedback` running to receive `/global_reward`.
+With `--with-waypoints`, also run a navigator for the same robot so the
+waypoints get executed:
+
+```bash
+./run_global_feedback.sh            # in one terminal
+./run_navigator.sh 0                # in another
+./run_belief.sh 0 --with-waypoints  # in a third
+```
+
+### rviz displays (Fixed Frame = `field`)
+
+- **Map** on `/robot_0/belief/uncertainty` — σ heatmap. Fresh areas stay
+  bright; explored areas darken.
+- **Map** on `/robot_0/belief/gradient_mag` — reward-gradient magnitude.
+  Peaks indicate "reward slope" hotspots.
+- **MarkerArray** on `/robot_0/belief/gradients` — mean-gradient arrow
+  field, coloured red→green by per-cell uncertainty.
+
 ### rviz displays
 
 With Fixed Frame set to `field`:

@@ -1,0 +1,30 @@
+belief_node:
+  ros__parameters:
+    robot_id: 0
+    # Grid footprint in field metres. Default covers a 3m x 3m area centred
+    # on (0,0) at 20cm resolution — tweak to your actual field size.
+    grid_resolution: 0.2
+    grid_origin_x: -1.5
+    grid_origin_y: -1.5
+    grid_width: 15
+    grid_height: 15
+    # Belief update fires once the robot has moved this far (m) since the
+    # last update.
+    displacement_threshold: 0.25
+    # RFF+BLR hyperparameters — see belief.py for details.
+    num_features: 256
+    lengthscale: 0.6
+    prior_std: 1.0
+    noise_std: 0.5
+    forgetting: 0.999
+    publish_rate_hz: 2.0
+    field_frame: "field"
+    # Set true to have this node publish UCB-driven waypoints for the
+    # navigator to follow. Off by default — belief-only visualisation.
+    publish_waypoints: false
+    ucb_alpha: 1.0
+    ucb_beta: 10.0
+    waypoint_tolerance: 0.15
+    # Draw a gradient arrow for every Nth cell. 1 = all cells.
+    gradient_subsample: 1
+    random_seed: 42

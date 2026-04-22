@@ -6,6 +6,7 @@ ENV DEBIAN_FRONTEND=noninteractive
 RUN apt-get update && apt-get install -y \
     ros-humble-rmw-cyclonedds-cpp \
     python3-colcon-common-extensions \
+    python3-numpy \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /ros_ws
