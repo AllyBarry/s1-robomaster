@@ -34,6 +34,6 @@ belief_node:
     # Gaussian penalty from candidate cells during UCB selection.
     # repulsion_radius is the 1-σ radius (m); repulsion_weight is the peak
     # penalty added at a peer's current cell.
-    repulsion_weight: 5.0
-    repulsion_radius: 0.4
+    repulsion_weight: 3.0
+    repulsion_radius: 0.25
     peer_pose_timeout: 1.0
