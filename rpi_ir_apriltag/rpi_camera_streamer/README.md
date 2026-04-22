@@ -428,3 +428,151 @@ You need `xhost` because:
 
 - After calibration you will find in `/tmp/calibrationdata.tar` `ost.yaml` which you must uncompress and put in the `.../config` 
 in `ros_ws`. Remember the name of the camera must match the config 
+
+
+
+
+# Camera
+h BRIO Camera Controls (/dev/video1)
+
+Use:
+
+export CAM=/dev/video1
+
+This is the main controllable video device for the Logitech Brio on your Jetson.
+
+⸻
+
+Why /dev/video1
+
+The Brio exposes multiple device nodes:
+
+/dev/video1
+/dev/video2
+/dev/video3
+/dev/video4
+
+We use /dev/video1 because it contains the camera controls:
+
+* focus
+* exposure
+* gain
+* white balance
+* zoom
+* pan / tilt
+
+Check controls:
+
+v4l2-ctl -d /dev/video1 --list-ctrls
+
+⸻
+
+Focus
+
+Controls image sharpness.
+
+Disable autofocus
+
+sudo v4l2-ctl -d $CAM -c focus_automatic_continuous=0
+
+Set manual focus
+
+sudo v4l2-ctl -d $CAM -c focus_absolute=40
+
+Use for AprilTags to stop focus hunting.
+
+⸻
+
+Exposure
+
+Controls brightness by changing sensor shutter time.
+
+Enable manual exposure
+
+sudo v4l2-ctl -d $CAM -c auto_exposure=1
+
+Set exposure time
+
+sudo v4l2-ctl -d $CAM -c exposure_time_absolute=80
+
+Lower = darker but sharper
+Higher = brighter but blurrier
+
+Use lower values for moving robots / sharp tags.
+
+⸻
+
+Gain
+
+Electronic brightness amplification.
+
+sudo v4l2-ctl -d $CAM -c gain=15
+
+Higher = brighter but noisier.
+
+Use only if image is too dark after exposure tuning.
+
+⸻
+
+White Balance
+
+Controls image color temperature.
+
+Disable auto white balance
+
+sudo v4l2-ctl -d $CAM -c white_balance_automatic=0
+
+Set temperature
+
+sudo v4l2-ctl -d $CAM -c white_balance_temperature=4500
+
+Mostly useful for color consistency.
+
+⸻
+
+Sharpness
+
+Digital edge enhancement.
+
+sudo v4l2-ctl -d $CAM -c sharpness=140
+
+Useful for AprilTag edges in moderation.
+
+⸻
+
+Backlight Compensation
+
+Adjusts for bright background scenes.
+
+sudo v4l2-ctl -d $CAM -c backlight_compensation=0
+
+Usually disable for controlled indoor robotics.
+
+⸻
+
+Recommended AprilTag Settings
+
+sudo v4l2-ctl -d $CAM -c focus_automatic_continuous=0
+sudo v4l2-ctl -d $CAM -c focus_absolute=40
+sudo v4l2-ctl -d $CAM -c auto_exposure=1
+sudo v4l2-ctl -d $CAM -c exposure_time_absolute=80
+sudo v4l2-ctl -d $CAM -c gain=15
+sudo v4l2-ctl -d $CAM -c sharpness=140
+sudo v4l2-ctl -d $CAM -c backlight_compensation=0
+
+⸻
+
+View Camera Without ROS
+
+ffplay $CAM
+
+or
+
+guvcview -d $CAM
+
+⸻
+
+Show Current Settings
+
+v4l2-ctl -d $CAM --all
+
