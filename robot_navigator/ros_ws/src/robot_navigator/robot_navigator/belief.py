@@ -393,6 +393,11 @@ class BeliefNode(Node):
     # ------------------------------------------------------------------ #
     def _waypoint_tick(self):
         if self.pos is None:
+            self.get_logger().warn(
+                f"No pose on /field/robot_{self.robot_id}/pose yet — "
+                f"waypoint tick idle.",
+                throttle_duration_sec=5.0,
+            )
             return
 
         cell = world_to_grid(
@@ -409,25 +414,33 @@ class BeliefNode(Node):
             return
         row, col = cell
 
-        # Replan only if we've reached (or have no) target cell.
+        # Replan only if we've reached (or have no) target cell; otherwise
+        # fall through and republish the existing target so downstream tools
+        # see a steady waypoint stream.
+        need_replan = True
         if self.waypoint_cell is not None:
             tx, ty = grid_to_world(*self.waypoint_cell, self.ox, self.oy, self.res)
             if math.hypot(tx - self.pos[0], ty - self.pos[1]) > self.waypoint_tol:
-                return  # still pursuing current target
+                need_replan = False
 
-        dx_mu, dy_mu = self.model.gradient_grids()
-        dx_sig, dy_sig = self.model.sigma_grids()
-        penalty = self._peer_penalty_grid()
-        action, _ = ucb_select(
-            dx_mu, dx_sig, dy_mu, dy_sig, row, col,
-            alpha=self.ucb_alpha, beta=self.ucb_beta,
-            penalty=penalty,
-        )
-        new_row = max(0, min(self.H - 1, row + ACTION_DROW[action]))
-        new_col = max(0, min(self.W - 1, col + ACTION_DCOL[action]))
-        self.waypoint_cell = (new_row, new_col)
+        if need_replan:
+            dx_mu, dy_mu = self.model.gradient_grids()
+            dx_sig, dy_sig = self.model.sigma_grids()
+            penalty = self._peer_penalty_grid()
+            action, _ = ucb_select(
+                dx_mu, dx_sig, dy_mu, dy_sig, row, col,
+                alpha=self.ucb_alpha, beta=self.ucb_beta,
+                penalty=penalty,
+            )
+            new_row = max(0, min(self.H - 1, row + ACTION_DROW[action]))
+            new_col = max(0, min(self.W - 1, col + ACTION_DCOL[action]))
+            self.waypoint_cell = (new_row, new_col)
+            self.get_logger().info(
+                f"New waypoint cell ({new_row}, {new_col}) -> "
+                f"{grid_to_world(new_row, new_col, self.ox, self.oy, self.res)}"
+            )
 
-        wx, wy = grid_to_world(new_row, new_col, self.ox, self.oy, self.res)
+        wx, wy = grid_to_world(*self.waypoint_cell, self.ox, self.oy, self.res)
         msg = PointStamped()
         msg.header.stamp = self.get_clock().now().to_msg()
         msg.header.frame_id = self.field_frame
