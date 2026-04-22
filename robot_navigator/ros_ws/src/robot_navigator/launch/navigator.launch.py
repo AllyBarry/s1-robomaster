@@ -15,18 +15,20 @@ def _launch_setup(context, *args, **kwargs):
     peer_csv = LaunchConfiguration("peer_robot_ids").perform(context).strip()
     peer_ids = [int(v) for v in peer_csv.split(",") if v.strip()]
 
+    overrides = {
+        "robot_id": robot_id,
+        "align_heading": align_heading,
+    }
+    # Only override peer_robot_ids when non-empty: an empty list gets
+    # inferred as BYTE_ARRAY and conflicts with the declared INTEGER_ARRAY.
+    if peer_ids:
+        overrides["peer_robot_ids"] = peer_ids
+
     navigator = Node(
         package="robot_navigator",
         executable="navigator",
         name="robot_navigator",
-        parameters=[
-            nav_yaml,
-            {
-                "robot_id": robot_id,
-                "align_heading": align_heading,
-                "peer_robot_ids": peer_ids,
-            },
-        ],
+        parameters=[nav_yaml, overrides],
         output="screen",
     )
     return [navigator]

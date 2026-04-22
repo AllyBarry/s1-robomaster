@@ -15,18 +15,20 @@ def _launch_setup(context, *args, **kwargs):
     peer_csv = LaunchConfiguration("peer_robot_ids").perform(context).strip()
     peer_ids = [int(v) for v in peer_csv.split(",") if v.strip()]
 
+    overrides = {
+        "robot_id": int(robot_id),
+        "publish_waypoints": publish_waypoints.lower() == "true",
+    }
+    # Only override peer_robot_ids when non-empty: an empty list gets
+    # inferred as BYTE_ARRAY and conflicts with the declared INTEGER_ARRAY.
+    if peer_ids:
+        overrides["peer_robot_ids"] = peer_ids
+
     belief = Node(
         package="robot_navigator",
         executable="belief",
         name="belief_node",
-        parameters=[
-            cfg,
-            {
-                "robot_id": int(robot_id),
-                "publish_waypoints": publish_waypoints.lower() == "true",
-                "peer_robot_ids": peer_ids,
-            },
-        ],
+        parameters=[cfg, overrides],
         output="screen",
     )
     return [belief]
