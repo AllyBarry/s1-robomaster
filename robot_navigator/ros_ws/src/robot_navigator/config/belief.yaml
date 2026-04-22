@@ -1,13 +1,13 @@
 belief_node:
   ros__parameters:
     robot_id: 0
-    # Grid footprint in field metres. Default covers a 3m x 3m area centred
-    # on (0,0) at 20cm resolution — tweak to your actual field size.
+    # Grid footprint in field metres. Matches the apriltag_detector field
+    # (0,0) to (3,2) defined in rpi_ir_apriltag/.../config/field.yaml.
     grid_resolution: 0.2
-    grid_origin_x: -1.5
-    grid_origin_y: -1.5
+    grid_origin_x: 0.0
+    grid_origin_y: 0.0
     grid_width: 15
-    grid_height: 15
+    grid_height: 10
     # Belief update fires once the robot has moved this far (m) since the
     # last update.
     displacement_threshold: 0.25
