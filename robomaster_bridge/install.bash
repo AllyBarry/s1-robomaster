@@ -67,7 +67,7 @@ ExecStart=/usr/bin/docker run --rm \
   --cpus 2.0 \
   -v /etc/cyclone_dds.xml:/etc/cyclone_dds.xml:ro \
   -e ROBOT_ID=${ROBOT_ID} \
-  -e ROS_DOMAIN_ID=${LOCAL_DOMAIN} \
+  -e ROS_DOMAIN_ID=${PUBLIC_DOMAIN} \
   -e CYCLONEDDS_URI=/etc/cyclone_dds.xml \
   robomaster_bridge:latest \
   /bin/bash -lc "source /opt/ros/humble/setup.bash && source /opt/robomaster_ws/install/setup.bash && ros2 launch src/robomaster_ros2_can/robomaster_can_ros_bridge/launch/bridge.launch.py"
