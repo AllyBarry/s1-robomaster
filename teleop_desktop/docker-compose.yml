@@ -1,5 +1,3 @@
-version: "3.9"
-
 services:
   teleop:
     build:
@@ -11,11 +9,12 @@ services:
     network_mode: host
     ipc: host
     environment:
-      - DISPLAY=${DISPLAY}
+      - DISPLAY=${DISPLAY:-:0}
       - ROS_DOMAIN_ID=0
       - RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
       - CYCLONEDDS_URI=/etc/cyclone_dds.xml
       - QT_X11_NO_MITSHM=1
+      - XAUTHORITY=/root/.Xauthority
     volumes:
       - /tmp/.X11-unix:/tmp/.X11-unix:rw
       - ${HOME}/.Xauthority:/root/.Xauthority:ro

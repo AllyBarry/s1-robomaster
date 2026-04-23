@@ -2,6 +2,7 @@ import math
 import time
 import rclpy
 from rclpy.node import Node
+from rclpy.qos import qos_profile_sensor_data
 from geometry_msgs.msg import PoseStamped, Twist, TwistStamped
 
 
@@ -41,8 +42,9 @@ class GoToPoint(Node):
         self.create_subscription(PoseStamped, "/goal_pose", self._on_goal, 10)
 
         # Subscribe to chassis velocity for dead reckoning between camera frames
+        # Bridge publishes with SensorDataQoS (best-effort), must match
         vel_topic = f"/robot_{self.robot_id}/vel"
-        self.create_subscription(TwistStamped, vel_topic, self._on_vel, 10)
+        self.create_subscription(TwistStamped, vel_topic, self._on_vel, qos_profile_sensor_data)
 
         # Publish velocity commands per robot
         cmd_topic = f"/robot_{self.robot_id}/cmd_vel"

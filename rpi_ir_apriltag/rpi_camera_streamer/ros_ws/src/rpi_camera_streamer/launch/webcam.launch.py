@@ -34,7 +34,7 @@ def generate_launch_description():
     return LaunchDescription([
         DeclareLaunchArgument(
             "video_device",
-            default_value="/dev/video0",
+            default_value="/dev/video1",
             description="V4L2 video device path",
         ),
         DeclareLaunchArgument(
