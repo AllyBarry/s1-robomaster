@@ -25,6 +25,8 @@
 #   --assignment <name>            ordered | nearest
 #   --with-waypoints               Publish UCB waypoints from belief nodes
 #   --no-waypoints                 Disable waypoint publishing (viz only)
+#   --collision                    Enable peer repulsion in the belief planner (off by default)
+#   --no-collision                 Disable peer repulsion in the belief planner (default)
 #   --scenario <name>              Episode name — CSV/JSON filename stem
 #   --duration <sec>               Auto-stop logger after N seconds (0 = run until killed)
 #   --sample-hz <float>            Logger sample rate
@@ -50,6 +52,7 @@ CENTER_X=""
 CENTER_Y=""
 ASSIGNMENT=""
 PUBLISH_WAYPOINTS=""
+COLLISION_AVOIDANCE=""
 SCENARIO=""
 DURATION=""
 SAMPLE_HZ=""
@@ -92,6 +95,14 @@ while [ "$#" -gt 0 ]; do
             PUBLISH_WAYPOINTS="false"
             shift
             ;;
+        --collision)
+            COLLISION_AVOIDANCE="true"
+            shift
+            ;;
+        --no-collision)
+            COLLISION_AVOIDANCE="false"
+            shift
+            ;;
         --scenario)
             SCENARIO="$2"
             shift 2
@@ -105,7 +116,7 @@ while [ "$#" -gt 0 ]; do
             shift 2
             ;;
         -h|--help)
-            sed -n '2,30p' "$0"
+            sed -n '2,43p' "$0"
             exit 0
             ;;
         *)
@@ -136,6 +147,7 @@ LAUNCH_ARGS=()
 [ -n "${CENTER_Y}"          ] && LAUNCH_ARGS+=("formation_center_y:=${CENTER_Y}")
 [ -n "${ASSIGNMENT}"        ] && LAUNCH_ARGS+=("assignment:=${ASSIGNMENT}")
 [ -n "${PUBLISH_WAYPOINTS}" ] && LAUNCH_ARGS+=("publish_waypoints:=${PUBLISH_WAYPOINTS}")
+[ -n "${COLLISION_AVOIDANCE}" ] && LAUNCH_ARGS+=("collision_avoidance:=${COLLISION_AVOIDANCE}")
 [ -n "${SCENARIO}"          ] && LAUNCH_ARGS+=("scenario:=${SCENARIO}")
 [ -n "${DURATION}"          ] && LAUNCH_ARGS+=("duration_sec:=${DURATION}")
 [ -n "${SAMPLE_HZ}"         ] && LAUNCH_ARGS+=("sample_hz:=${SAMPLE_HZ}")

@@ -21,6 +21,7 @@ def _launch_setup(context, *args, **kwargs):
     center_y = LaunchConfiguration("formation_center_y").perform(context)
     assignment = LaunchConfiguration("assignment").perform(context)
     publish_waypoints = LaunchConfiguration("publish_waypoints").perform(context)
+    collision_avoidance = LaunchConfiguration("collision_avoidance").perform(context).lower() == "true"
     scenario = LaunchConfiguration("scenario").perform(context)
     duration_sec = LaunchConfiguration("duration_sec").perform(context)
     log_dir = LaunchConfiguration("log_dir").perform(context)
@@ -56,7 +57,7 @@ def _launch_setup(context, *args, **kwargs):
     # its parameter-handling logic here.
     belief_launch = os.path.join(pkg_share, "launch", "belief.launch.py")
     for rid in robot_ids:
-        peers = ",".join(str(p) for p in robot_ids if p != rid)
+        peers = ",".join(str(p) for p in robot_ids if p != rid) if collision_avoidance else ""
         actions.append(IncludeLaunchDescription(
             PythonLaunchDescriptionSource(belief_launch),
             launch_arguments={
@@ -122,6 +123,11 @@ def generate_launch_description():
             "publish_waypoints",
             default_value="true",
             description="If true, each belief node also publishes UCB-driven waypoints",
+        ),
+        DeclareLaunchArgument(
+            "collision_avoidance",
+            default_value="false",
+            description="If true, wire peer_robot_ids into each belief so UCB waypoints repel peers",
         ),
         DeclareLaunchArgument(
             "scenario",
