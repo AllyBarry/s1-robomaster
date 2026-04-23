@@ -11,6 +11,7 @@ RUN apt-get update && apt-get install -y \
     python3-pip \
     python3-colcon-common-extensions \
     usbutils \
+    v4l-utils \
     libopenni2-0 \
     ros-humble-openni2-camera \
     ros-humble-v4l2-camera \

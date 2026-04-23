@@ -1,17 +1,17 @@
 image_width: 640
 image_height: 480
-camera_name: narrow_stereo
+camera_name: logitech_brio
 camera_matrix:
   rows: 3
   cols: 3
-  data: [628.36227,   0.     , 329.79835,
-           0.     , 625.51676, 227.0305 ,
+  data: [501.20243,   0.     , 313.35332,
+           0.     , 499.37113, 255.84529,
            0.     ,   0.     ,   1.     ]
 distortion_model: plumb_bob
 distortion_coefficients:
   rows: 1
   cols: 5
-  data: [0.226974, -0.429325, 0.001027, 0.010438, 0.000000]
+  data: [0.154978, -0.229995, 0.003850, -0.010634, 0.000000]
 rectification_matrix:
   rows: 3
   cols: 3
@@ -21,6 +21,6 @@ rectification_matrix:
 projection_matrix:
   rows: 3
   cols: 4
-  data: [645.7981 ,   0.     , 334.3313 ,   0.     ,
-           0.     , 647.52539, 226.90843,   0.     ,
-           0.     ,   0.     ,   1.     ,   0.   ] 
+  data: [512.63446,   0.     , 306.2342 ,   0.     ,
+           0.     , 514.91638, 257.14319,   0.     ,
+           0.     ,   0.     ,   1.     ,   0.     ]

@@ -40,8 +40,8 @@ def generate_launch_description():
         name="apriltag",
         parameters=[apriltag_yaml],
         remappings=[
-            ("image_rect", LaunchConfiguration("image_topic")),
-            #("image_rect", "/webcam/image_rect"),
+            #("image_rect", LaunchConfiguration("image_topic")),
+            ("image_rect", "/webcam/image_rect"),
             #("image_rect", "/image_rect"),
             ("camera_info", LaunchConfiguration("camera_info_topic")),
         ],

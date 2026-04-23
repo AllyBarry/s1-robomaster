@@ -552,14 +552,23 @@ Usually disable for controlled indoor robotics.
 
 Recommended AprilTag Settings
 
-sudo v4l2-ctl -d $CAM -c focus_automatic_continuous=0
-sudo v4l2-ctl -d $CAM -c focus_absolute=40
-sudo v4l2-ctl -d $CAM -c auto_exposure=1
-sudo v4l2-ctl -d $CAM -c exposure_time_absolute=80
-sudo v4l2-ctl -d $CAM -c gain=15
-sudo v4l2-ctl -d $CAM -c sharpness=140
-sudo v4l2-ctl -d $CAM -c backlight_compensation=0
-
+udo v4l2-ctl -d $CAM \
+-c auto_exposure=1 \
+-c focus_automatic_continuous=0 \
+-c white_balance_automatic=0 \
+-c exposure_time_absolute=350 \
+-c exposure_dynamic_framerate=0 \
+-c pan_absolute=0 \
+-c tilt_absolute=0 \
+-c focus_absolute=0 \
+-c gain=15 \
+-c white_balance_temperature=4500 \
+-c brightness=128 \
+-c contrast=145 \
+-c saturation=100 \
+-c sharpness=255 \
+-c backlight_compensation=0 \
+-c power_line_frequency=2
 ⸻
 
 View Camera Without ROS
