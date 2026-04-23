@@ -30,7 +30,7 @@ ROBOT_IDS="${1:-}"
 FORMATION="${2:-}"
 SPACING="${3:-}"
 ASSIGNMENT="${4:-}"
-PUBLISH_WAYPOINTS="${5:-}"
+PUBLISH_WAYPOINTS="${5:true}"
 
 if [ "${REBUILD}" = "1" ]; then
     echo "Rebuilding image from scratch..."

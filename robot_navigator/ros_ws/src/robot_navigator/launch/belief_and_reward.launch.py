@@ -17,6 +17,8 @@ def _launch_setup(context, *args, **kwargs):
 
     formation = LaunchConfiguration("formation").perform(context)
     spacing = LaunchConfiguration("formation_spacing").perform(context)
+    center_x = LaunchConfiguration("formation_center_x").perform(context)
+    center_y = LaunchConfiguration("formation_center_y").perform(context)
     assignment = LaunchConfiguration("assignment").perform(context)
     publish_waypoints = LaunchConfiguration("publish_waypoints").perform(context)
 
@@ -36,6 +38,8 @@ def _launch_setup(context, *args, **kwargs):
             {
                 "formation": formation,
                 "formation_spacing": float(spacing),
+                "formation_center_x": float(center_x),
+                "formation_center_y": float(center_y),
                 "assignment": assignment,
                 "robot_ids": robot_ids,
             },
@@ -77,6 +81,16 @@ def generate_launch_description():
             "formation_spacing",
             default_value="0.4",
             description="Line neighbour spacing, or triangle/circle radius (m)",
+        ),
+        DeclareLaunchArgument(
+            "formation_center_x",
+            default_value="1.5",
+            description="Formation centre x (field is 3.0 m wide → 1.5 m = middle)",
+        ),
+        DeclareLaunchArgument(
+            "formation_center_y",
+            default_value="1.0",
+            description="Formation centre y (field is 2.0 m tall → 1.0 m = middle)",
         ),
         DeclareLaunchArgument(
             "assignment",

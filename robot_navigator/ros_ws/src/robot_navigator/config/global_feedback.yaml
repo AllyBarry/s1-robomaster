@@ -4,7 +4,7 @@ global_feedback:
     # One of: line | triangle | circle | custom
     formation: "triangle"
     formation_center_x: 1.0
-    formation_center_y: 0.5
+    formation_center_y: 1.0
     # Line: neighbour spacing. Triangle/circle: radius from centre.
     formation_spacing: 0.5
     formation_yaw: 0.0
