@@ -76,6 +76,13 @@ def generate_launch_description():
         output="screen",
     )
 
+    robot_boundary_visualizer = Node(
+        package="apriltag_detector",
+        executable="robot_boundary_visualizer",
+        name="robot_boundary_visualizer",
+        output="screen",
+    )
+
     return LaunchDescription([
         image_topic_arg,
         camera_info_topic_arg,
@@ -83,5 +90,6 @@ def generate_launch_description():
         field_localizer,
         overlay,
         field_visualizer,
+        robot_boundary_visualizer,
         rectify,
     ])
