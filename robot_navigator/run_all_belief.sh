@@ -74,13 +74,16 @@ for id in "${IDS[@]}"; do
     CONTAINER_NAME="belief_${id}"
     docker rm -f "${CONTAINER_NAME}" >/dev/null 2>&1 || true
 
+    LAUNCH_ARGS=(
+        "robot_id:=${id}"
+        "publish_waypoints:=${WITH_WAYPOINTS}"
+    )
+    [ -n "${peers}" ] && LAUNCH_ARGS+=("peer_robot_ids:=${peers}")
+
     docker compose run --remove-orphans -d \
         --name "${CONTAINER_NAME}" \
         robot_navigator \
-        ros2 launch robot_navigator belief.launch.py \
-            robot_id:=${id} \
-            publish_waypoints:=${WITH_WAYPOINTS} \
-            peer_robot_ids:=${peers}
+        ros2 launch robot_navigator belief.launch.py "${LAUNCH_ARGS[@]}"
 
     echo "Started ${CONTAINER_NAME} — follow with: docker logs -f ${CONTAINER_NAME}"
 done

@@ -74,13 +74,16 @@ fi
 CONTAINER_NAME="belief_${ROBOT_ID}"
 docker rm -f "${CONTAINER_NAME}" >/dev/null 2>&1 || true
 
+LAUNCH_ARGS=(
+    "robot_id:=${ROBOT_ID}"
+    "publish_waypoints:=${WITH_WAYPOINTS}"
+)
+[ -n "${PEERS}" ] && LAUNCH_ARGS+=("peer_robot_ids:=${PEERS}")
+
 docker compose run --remove-orphans -d \
     --name "${CONTAINER_NAME}" \
     robot_navigator \
-    ros2 launch robot_navigator belief.launch.py \
-        robot_id:=${ROBOT_ID} \
-        publish_waypoints:=${WITH_WAYPOINTS} \
-        peer_robot_ids:=${PEERS}
+    ros2 launch robot_navigator belief.launch.py "${LAUNCH_ARGS[@]}"
 
 echo "Started ${CONTAINER_NAME} — follow with: docker logs -f ${CONTAINER_NAME}"
 echo ""
