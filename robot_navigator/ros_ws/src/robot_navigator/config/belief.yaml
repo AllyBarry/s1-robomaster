@@ -16,15 +16,22 @@ belief_node:
     num_features: 256
     lengthscale: 0.6
     prior_std: 1.0
-    noise_std: 0.5
+    # Scaled to the 0.2 m cell regime: typical |gx_obs| ≈ Δr ≈ 0.2, so the
+    # BLR noise must be well below that or posterior updates get damped to
+    # zero. Sim uses 0.3 with 0.5 m cells (~0.6× typical signal) — this
+    # keeps the same ratio.
+    noise_std: 0.15
     forgetting: 0.999
     publish_rate_hz: 2.0
     field_frame: "field"
     # Set true to have this node publish UCB-driven waypoints for the
     # navigator to follow. Off by default — belief-only visualisation.
     publish_waypoints: false
-    ucb_alpha: 1.0
-    ucb_beta: 10.0
+    # Exploit-biased UCB (α > β). Earlier β=10 drew the robot to
+    # perimeter cells (permanently high-σ because their outward
+    # neighbours can't be sampled) causing edge oscillation.
+    ucb_alpha: 2.0
+    ucb_beta: 1.5
     waypoint_tolerance: 0.15
     # Draw a gradient arrow for every Nth cell. 1 = all cells.
     gradient_subsample: 1
