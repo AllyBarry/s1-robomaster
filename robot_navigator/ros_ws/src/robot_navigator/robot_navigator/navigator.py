@@ -92,6 +92,10 @@ class RobotNavigator(Node):
         # toggled on /collision_avoidance_enabled (std_msgs/Bool).
         self.declare_parameter("avoidance_enabled", True)
         self.declare_parameter("avoidance_toggle_topic", "/collision_avoidance_enabled")
+        # Drop the current goal if no fresh waypoint/goal_pose arrives within
+        # this window — prevents the sticky goal from driving the robot
+        # after its belief/waypoint publisher has died. Set to 0 to disable.
+        self.declare_parameter("goal_timeout", 2.0)
 
         self.robot_id = int(self.get_parameter("robot_id").value)
         self.linear_gain = float(self.get_parameter("linear_gain").value)
@@ -116,6 +120,7 @@ class RobotNavigator(Node):
         self.peer_pose_timeout = float(self.get_parameter("peer_pose_timeout").value)
         self.avoidance_enabled = bool(self.get_parameter("avoidance_enabled").value)
         avoid_toggle_topic = str(self.get_parameter("avoidance_toggle_topic").value)
+        self.goal_timeout = float(self.get_parameter("goal_timeout").value)
 
         pose_topic = f"/field/robot_{self.robot_id}/pose"
         goal_pose_topic = f"/robot_{self.robot_id}/goal_pose"
@@ -176,6 +181,7 @@ class RobotNavigator(Node):
 
         # Goal in field frame: (x, y, yaw or None).
         self.goal: tuple[float, float, float | None] | None = None
+        self.last_goal_time: float | None = None
 
         self.create_timer(self.control_period, self._control_loop)
 
@@ -241,6 +247,7 @@ class RobotNavigator(Node):
             return
         yaw = _yaw_from_quat(msg.pose.orientation) if self.align_heading else None
         self.goal = (msg.pose.position.x, msg.pose.position.y, yaw)
+        self.last_goal_time = time.monotonic()
         self.get_logger().info(
             f"Goal pose set: ({self.goal[0]:.2f}, {self.goal[1]:.2f})"
             + (f" yaw={math.degrees(yaw):.0f}°" if yaw is not None else "")
@@ -253,6 +260,7 @@ class RobotNavigator(Node):
             )
             return
         self.goal = (msg.point.x, msg.point.y, None)
+        self.last_goal_time = time.monotonic()
         self.get_logger().info(
             f"Waypoint set: ({self.goal[0]:.2f}, {self.goal[1]:.2f})"
         )
@@ -377,6 +385,16 @@ class RobotNavigator(Node):
                     throttle_duration_sec=2.0,
                 )
                 return
+
+        if (self.goal is not None
+                and self.goal_timeout > 0.0
+                and self.last_goal_time is not None
+                and now - self.last_goal_time > self.goal_timeout):
+            age = now - self.last_goal_time
+            self.get_logger().warn(
+                f"Goal stale ({age:.2f}s > {self.goal_timeout:.2f}s) — clearing."
+            )
+            self.goal = None
 
         if self.goal is None:
             self._publish_cmd(0.0, 0.0, 0.0)
