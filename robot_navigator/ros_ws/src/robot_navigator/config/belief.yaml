@@ -8,9 +8,10 @@ belief_node:
     grid_origin_y: 0.0
     grid_width: 15
     grid_height: 10
-    # Belief update fires once the robot has moved this far (m) since the
-    # last update.
-    displacement_threshold: 0.25
+    # Belief updates once per new grid cell. This is a small metric floor
+    # (m) applied on top to ignore pose-noise jitter. Keep well under
+    # grid_resolution.
+    min_displacement: 0.05
     # RFF+BLR hyperparameters — see belief.py for details.
     num_features: 256
     lengthscale: 0.6

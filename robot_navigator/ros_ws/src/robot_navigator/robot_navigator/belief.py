@@ -12,11 +12,12 @@ Publishes:
     /robot_{id}/belief/gradients     visualization_msgs/MarkerArray (arrows)
     /robot_{id}/waypoint             geometry_msgs/PointStamped   (optional)
 
-Update rule: cache (position, reward). Once the robot has moved
-`displacement_threshold` metres, decompose Δreward along the displacement
-into a 2-D gradient observation at the *source* grid cell and feed it into
-two independent Bayesian linear regressions (x- and y-components) over
-Random Fourier Features.
+Update rule: cache (position, reward). When the robot crosses into a new
+grid cell (and has moved at least `min_displacement` metres to filter
+pose noise), decompose Δreward along the displacement into a 2-D gradient
+observation at the *source* grid cell and feed it into two independent
+Bayesian linear regressions (x- and y-components) over Random Fourier
+Features.
 
 If `publish_waypoints` is true, the node also runs UCB on its current
 gradient belief and publishes a waypoint for the `robot_navigator` to
@@ -213,7 +214,10 @@ class BeliefNode(Node):
         self.declare_parameter("grid_origin_y", -1.5)
         self.declare_parameter("grid_width", 15)
         self.declare_parameter("grid_height", 15)
-        self.declare_parameter("displacement_threshold", 0.25)
+        # Minimum displacement (m) to accept a sample, on top of the
+        # cell-change requirement. Pure pose-noise jitter should stay below
+        # this. Keep it well under grid_resolution.
+        self.declare_parameter("min_displacement", 0.05)
         self.declare_parameter("num_features", 256)
         self.declare_parameter("lengthscale", 0.6)
         self.declare_parameter("prior_std", 1.0)
@@ -247,7 +251,7 @@ class BeliefNode(Node):
         self.oy = float(self.get_parameter("grid_origin_y").value)
         self.W = int(self.get_parameter("grid_width").value)
         self.H = int(self.get_parameter("grid_height").value)
-        self.disp_thresh = float(self.get_parameter("displacement_threshold").value)
+        self.min_disp = float(self.get_parameter("min_displacement").value)
         self.field_frame = str(self.get_parameter("field_frame").value)
         self.publish_waypoints = bool(self.get_parameter("publish_waypoints").value)
         self.ucb_alpha = float(self.get_parameter("ucb_alpha").value)
@@ -283,6 +287,7 @@ class BeliefNode(Node):
 
         self.pos: np.ndarray | None = None
         self.prev_pos: np.ndarray | None = None
+        self.prev_cell: tuple[int, int] | None = None
         self.current_reward: float | None = None
         self.prev_reward: float | None = None
 
@@ -381,32 +386,40 @@ class BeliefNode(Node):
         if self.pos is None or self.current_reward is None:
             return
 
+        cur_cell = world_to_grid(
+            self.pos[0], self.pos[1],
+            self.ox, self.oy, self.res, self.H, self.W
+        )
+        if cur_cell is None:
+            return
+
         if self.prev_pos is None:
             self.prev_pos = self.pos.copy()
+            self.prev_cell = cur_cell
             self.prev_reward = self.current_reward
+            return
+
+        # Sample only when the robot enters a new grid cell. Filters cell
+        # chatter on cell boundaries via a small metric floor.
+        if cur_cell == self.prev_cell:
             return
 
         disp = self.pos - self.prev_pos
         dist = float(np.linalg.norm(disp))
-        if dist < self.disp_thresh:
+        if dist < self.min_disp:
             return
 
         reward_delta = self.current_reward - self.prev_reward
-        # Gradient observation: Δr along unit displacement, resolved onto x and y.
         inv_dist = 1.0 / dist
         gx_obs = reward_delta * disp[0] * inv_dist
         gy_obs = reward_delta * disp[1] * inv_dist
 
-        cell = world_to_grid(
-            self.prev_pos[0], self.prev_pos[1],
-            self.ox, self.oy, self.res, self.H, self.W
-        )
-        if cell is not None:
-            row, col = cell
-            self.model.add_sample(row, col, gx_obs, gy_obs)
-            self.model.update_predictions()
+        row, col = self.prev_cell
+        self.model.add_sample(row, col, gx_obs, gy_obs)
+        self.model.update_predictions()
 
         self.prev_pos = self.pos.copy()
+        self.prev_cell = cur_cell
         self.prev_reward = self.current_reward
 
     # ------------------------------------------------------------------ #
