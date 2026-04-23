@@ -19,6 +19,7 @@ setup(
             "detection_overlay = apriltag_detector.detection_overlay:main",
             "field_localizer = apriltag_detector.field_localizer:main",
             "field_visualizer = apriltag_detector.field_visualizer:main",
+            "robot_boundary_visualizer = apriltag_detector.robot_boundary_visualizer:main",
         ],
     },
     install_requires=["setuptools"],
