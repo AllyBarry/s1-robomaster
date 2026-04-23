@@ -21,6 +21,10 @@ def _launch_setup(context, *args, **kwargs):
     center_y = LaunchConfiguration("formation_center_y").perform(context)
     assignment = LaunchConfiguration("assignment").perform(context)
     publish_waypoints = LaunchConfiguration("publish_waypoints").perform(context)
+    scenario = LaunchConfiguration("scenario").perform(context)
+    duration_sec = LaunchConfiguration("duration_sec").perform(context)
+    log_dir = LaunchConfiguration("log_dir").perform(context)
+    sample_hz = LaunchConfiguration("sample_hz").perform(context)
 
     actions = []
 
@@ -62,6 +66,23 @@ def _launch_setup(context, *args, **kwargs):
             }.items(),
         ))
 
+    # trajectory_logger records per-tick robot poses and global_reward into
+    # a CSV plus a JSON sidecar with targets — consumed offline by
+    # scripts/plot_experiment.py.
+    actions.append(Node(
+        package="robot_navigator",
+        executable="trajectory_logger",
+        name="trajectory_logger",
+        parameters=[{
+            "robot_ids": robot_ids,
+            "scenario": scenario,
+            "duration_sec": float(duration_sec),
+            "log_dir": log_dir,
+            "sample_hz": float(sample_hz),
+        }],
+        output="screen",
+    ))
+
     return actions
 
 
@@ -101,6 +122,26 @@ def generate_launch_description():
             "publish_waypoints",
             default_value="true",
             description="If true, each belief node also publishes UCB-driven waypoints",
+        ),
+        DeclareLaunchArgument(
+            "scenario",
+            default_value="run",
+            description="Episode name — becomes the CSV/JSON filename stem in log_dir",
+        ),
+        DeclareLaunchArgument(
+            "duration_sec",
+            default_value="0.0",
+            description="Auto-stop logger after this many seconds. 0 = run until killed.",
+        ),
+        DeclareLaunchArgument(
+            "log_dir",
+            default_value="/ros_ws/experiment_logs",
+            description="Where the CSV + JSON sidecar are written (container path)",
+        ),
+        DeclareLaunchArgument(
+            "sample_hz",
+            default_value="10.0",
+            description="Logger sampling rate (Hz)",
         ),
         OpaqueFunction(function=_launch_setup),
     ])

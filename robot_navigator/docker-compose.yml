@@ -12,6 +12,9 @@ services:
     ipc: host
     volumes:
       - ../cyclone_dds.xml:/etc/cyclone_dds.xml:ro
+      # Logs written by trajectory_logger (scenario.csv + scenario.json)
+      # surface here on the host for post-hoc plotting.
+      - ./experiment_logs:/ros_ws/experiment_logs
     environment:
       - ROS_DOMAIN_ID=0
       - RMW_IMPLEMENTATION=rmw_cyclonedds_cpp

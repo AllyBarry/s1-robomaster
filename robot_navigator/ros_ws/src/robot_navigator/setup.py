@@ -20,6 +20,7 @@ setup(
             "follower = robot_navigator.follower:main",
             "global_feedback = robot_navigator.global_feedback:main",
             "belief = robot_navigator.belief:main",
+            "trajectory_logger = robot_navigator.trajectory_logger:main",
         ],
     },
     install_requires=["setuptools"],

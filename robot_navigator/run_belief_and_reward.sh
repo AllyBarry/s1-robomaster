@@ -9,28 +9,112 @@
 # robots can coast during a belief re-seed instead of being killed
 # mid-transit.
 #
+# All knobs are named flags; anything omitted falls back to the launch
+# file default (see belief_and_reward.launch.py).
+#
 # Usage:
-#   ./run_belief_and_reward.sh [--rebuild] [robot_ids_csv] [formation] [spacing] [assignment] [publish_waypoints]
+#   ./run_belief_and_reward.sh [flags]
+#
+# Flags:
+#   --rebuild | -r                 Rebuild image from scratch before running
+#   --robots <csv>                 Robot IDs, e.g. 0,1,2
+#   --formation <name>             line | triangle | circle | custom
+#   --spacing <float>              Line spacing or triangle/circle radius (m)
+#   --center-x <float>             Formation centre x (m)
+#   --center-y <float>             Formation centre y (m)
+#   --assignment <name>            ordered | nearest
+#   --with-waypoints               Publish UCB waypoints from belief nodes
+#   --no-waypoints                 Disable waypoint publishing (viz only)
+#   --scenario <name>              Episode name — CSV/JSON filename stem
+#   --duration <sec>               Auto-stop logger after N seconds (0 = run until killed)
+#   --sample-hz <float>            Logger sample rate
+#
+# Logs (CSV + JSON sidecar) land in ./experiment_logs/ on the host.
+# Plot them offline with:
+#   python3 scripts/plot_experiment.py experiment_logs/
 #
 # Examples:
-#   ./run_belief_and_reward.sh                               # launch-file defaults
-#   ./run_belief_and_reward.sh 0,1,2 line 0.4 ordered true
-#   ./run_belief_and_reward.sh 0,1,2 triangle 0.5 ordered
-#   ./run_belief_and_reward.sh --rebuild 0,1 line 0.3 ordered true
+#   ./run_belief_and_reward.sh                                   # all defaults
+#   ./run_belief_and_reward.sh --scenario baseline --duration 120
+#   ./run_belief_and_reward.sh --robots 0,1,2 --formation line --spacing 0.4
+#   ./run_belief_and_reward.sh --formation triangle --center-x 1.5 --center-y 1.0
+#   ./run_belief_and_reward.sh --rebuild --robots 0,1 --with-waypoints
 
 set -e
 
 REBUILD=0
-if [ "$1" = "--rebuild" ] || [ "$1" = "-r" ]; then
-    REBUILD=1
-    shift
-fi
+ROBOT_IDS=""
+FORMATION=""
+SPACING=""
+CENTER_X=""
+CENTER_Y=""
+ASSIGNMENT=""
+PUBLISH_WAYPOINTS=""
+SCENARIO=""
+DURATION=""
+SAMPLE_HZ=""
 
-ROBOT_IDS="${1:-}"
-FORMATION="${2:-}"
-SPACING="${3:-}"
-ASSIGNMENT="${4:-}"
-PUBLISH_WAYPOINTS="${5:true}"
+while [ "$#" -gt 0 ]; do
+    case "$1" in
+        --rebuild|-r)
+            REBUILD=1
+            shift
+            ;;
+        --robots)
+            ROBOT_IDS="$2"
+            shift 2
+            ;;
+        --formation)
+            FORMATION="$2"
+            shift 2
+            ;;
+        --spacing)
+            SPACING="$2"
+            shift 2
+            ;;
+        --center-x)
+            CENTER_X="$2"
+            shift 2
+            ;;
+        --center-y)
+            CENTER_Y="$2"
+            shift 2
+            ;;
+        --assignment)
+            ASSIGNMENT="$2"
+            shift 2
+            ;;
+        --with-waypoints)
+            PUBLISH_WAYPOINTS="true"
+            shift
+            ;;
+        --no-waypoints)
+            PUBLISH_WAYPOINTS="false"
+            shift
+            ;;
+        --scenario)
+            SCENARIO="$2"
+            shift 2
+            ;;
+        --duration)
+            DURATION="$2"
+            shift 2
+            ;;
+        --sample-hz)
+            SAMPLE_HZ="$2"
+            shift 2
+            ;;
+        -h|--help)
+            sed -n '2,30p' "$0"
+            exit 0
+            ;;
+        *)
+            echo "Unknown argument: $1"
+            echo "Run with --help to see flags."
+            exit 1
+            ;;
+    esac
+done
 
 if [ "${REBUILD}" = "1" ]; then
     echo "Rebuilding image from scratch..."
@@ -48,8 +132,13 @@ LAUNCH_ARGS=()
 [ -n "${ROBOT_IDS}"         ] && LAUNCH_ARGS+=("robot_ids:=${ROBOT_IDS}")
 [ -n "${FORMATION}"         ] && LAUNCH_ARGS+=("formation:=${FORMATION}")
 [ -n "${SPACING}"           ] && LAUNCH_ARGS+=("formation_spacing:=${SPACING}")
+[ -n "${CENTER_X}"          ] && LAUNCH_ARGS+=("formation_center_x:=${CENTER_X}")
+[ -n "${CENTER_Y}"          ] && LAUNCH_ARGS+=("formation_center_y:=${CENTER_Y}")
 [ -n "${ASSIGNMENT}"        ] && LAUNCH_ARGS+=("assignment:=${ASSIGNMENT}")
 [ -n "${PUBLISH_WAYPOINTS}" ] && LAUNCH_ARGS+=("publish_waypoints:=${PUBLISH_WAYPOINTS}")
+[ -n "${SCENARIO}"          ] && LAUNCH_ARGS+=("scenario:=${SCENARIO}")
+[ -n "${DURATION}"          ] && LAUNCH_ARGS+=("duration_sec:=${DURATION}")
+[ -n "${SAMPLE_HZ}"         ] && LAUNCH_ARGS+=("sample_hz:=${SAMPLE_HZ}")
 
 CONTAINER_NAME="belief_and_reward"
 
