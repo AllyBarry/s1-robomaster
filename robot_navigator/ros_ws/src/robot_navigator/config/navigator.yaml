@@ -1,9 +1,9 @@
 robot_navigator:
   ros__parameters:
     robot_id: 0
-    linear_gain: 0.8
+    linear_gain: 0.5
     angular_gain: 1.2
-    max_linear_speed: 0.5
+    max_linear_speed: 0.2
     max_angular_speed: 1.5
     goal_tolerance: 0.05
     angular_tolerance: 0.15
