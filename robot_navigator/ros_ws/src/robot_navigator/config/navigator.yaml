@@ -23,3 +23,6 @@ robot_navigator:
     avoidance_radius: 0.25
     avoidance_gain: 0.3
     peer_pose_timeout: 1.0
+    # Reactive peer repulsion is OFF by default. Flip to true here or
+    # toggle live by publishing Bool on /collision_avoidance_enabled.
+    avoidance_enabled: false

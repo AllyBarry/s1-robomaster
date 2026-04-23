@@ -241,6 +241,11 @@ class BeliefNode(Node):
         # Runtime kill-switch for the planner-layer repulsion penalty.
         self.declare_parameter("repulsion_enabled", True)
         self.declare_parameter("avoidance_toggle_topic", "/collision_avoidance_enabled")
+        # Edge-margin penalty: discourages UCB from picking waypoints near
+        # the grid boundary (under-sampled corners otherwise attract the
+        # explore bonus). 0 or non-positive values disable.
+        self.declare_parameter("edge_margin_cells", 2)
+        self.declare_parameter("edge_margin_weight", 5.0)
 
         self.robot_id = int(self.get_parameter("robot_id").value)
         self.res = float(self.get_parameter("grid_resolution").value)
@@ -264,11 +269,17 @@ class BeliefNode(Node):
         self.peer_timeout = float(self.get_parameter("peer_pose_timeout").value)
         self.rep_enabled = bool(self.get_parameter("repulsion_enabled").value)
         avoid_toggle_topic = str(self.get_parameter("avoidance_toggle_topic").value)
+        self.edge_margin_cells = int(self.get_parameter("edge_margin_cells").value)
+        self.edge_margin_weight = float(self.get_parameter("edge_margin_weight").value)
 
         # Precomputed world-coord mesh for fast penalty evaluation.
         xs = self.ox + (np.arange(self.W) + 0.5) * self.res
         ys = self.oy + (np.arange(self.H) + 0.5) * self.res
         self._grid_X, self._grid_Y = np.meshgrid(xs, ys)
+
+        # Static edge-margin penalty: linear falloff from the boundary.
+        # Cells ≥ edge_margin_cells from every edge get 0.
+        self._edge_penalty = self._compute_edge_penalty()
 
         self.model = GradientFieldRFFBLR(
             H=self.H, W=self.W,
@@ -376,6 +387,28 @@ class BeliefNode(Node):
             penalty += self.rep_weight * np.exp(-d2 / denom)
         return penalty
 
+    def _compute_edge_penalty(self) -> np.ndarray | None:
+        if self.edge_margin_cells <= 0 or self.edge_margin_weight <= 0.0:
+            return None
+        rs = np.arange(self.H)
+        cs = np.arange(self.W)
+        d_row = np.minimum(rs, self.H - 1 - rs)
+        d_col = np.minimum(cs, self.W - 1 - cs)
+        d_edge = np.minimum(d_row[:, None], d_col[None, :])
+        margin = float(self.edge_margin_cells)
+        return self.edge_margin_weight * np.maximum(0.0, margin - d_edge) / margin
+
+    def _combined_penalty(self) -> np.ndarray | None:
+        peer = self._peer_penalty_grid()
+        edge = self._edge_penalty
+        if peer is None and edge is None:
+            return None
+        if peer is None:
+            return edge
+        if edge is None:
+            return peer
+        return peer + edge
+
     # ------------------------------------------------------------------ #
     #  Belief update
     # ------------------------------------------------------------------ #
@@ -457,7 +490,7 @@ class BeliefNode(Node):
         if need_replan:
             dx_mu, dy_mu = self.model.gradient_grids()
             dx_sig, dy_sig = self.model.sigma_grids()
-            penalty = self._peer_penalty_grid()
+            penalty = self._combined_penalty()
             action, _ = ucb_select(
                 dx_mu, dx_sig, dy_mu, dy_sig, row, col,
                 alpha=self.ucb_alpha, beta=self.ucb_beta,
@@ -493,7 +526,7 @@ class BeliefNode(Node):
             self.mag_pub, stamp, np.hypot(mu_x, mu_y)
         )
 
-        rep = self._peer_penalty_grid()
+        rep = self._combined_penalty()
         if rep is None:
             rep = np.zeros((self.H, self.W))
         self._publish_occupancy(self.rep_pub, stamp, rep)
