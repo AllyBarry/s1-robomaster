@@ -5,12 +5,13 @@
 # running for that to actually drive the robot).
 #
 # Usage:
-#   ./run_belief.sh [--rebuild] <robot_id> [--with-waypoints] [--peers 1,2]
+#   ./run_belief.sh [--rebuild] <robot_id> [--with-waypoints] [--peers 1,2] [--no-collision]
 #
 # Examples:
 #   ./run_belief.sh 0                            # viz-only belief for robot 0
 #   ./run_belief.sh 0 --with-waypoints           # viz + UCB waypoints
 #   ./run_belief.sh 0 --with-waypoints --peers 1,2   # add repulsion from 1 and 2
+#   ./run_belief.sh 0 --with-waypoints --no-collision   # force peers empty (disables repulsion)
 #   ./run_belief.sh --rebuild 0                  # force image rebuild first
 
 set -e
@@ -31,6 +32,7 @@ shift
 
 WITH_WAYPOINTS="false"
 PEERS=""
+NO_COLLISION=0
 while [ "$#" -gt 0 ]; do
     case "$1" in
         --with-waypoints|-w)
@@ -41,12 +43,23 @@ while [ "$#" -gt 0 ]; do
             PEERS="$2"
             shift 2
             ;;
+        --no-collision)
+            NO_COLLISION=1
+            shift
+            ;;
         *)
             echo "Unknown argument: $1"
             exit 1
             ;;
     esac
 done
+
+if [ "${NO_COLLISION}" = "1" ]; then
+    if [ -n "${PEERS}" ]; then
+        echo "--no-collision overrides --peers ${PEERS}; peers will be empty."
+    fi
+    PEERS=""
+fi
 
 if [ "${REBUILD}" = "1" ]; then
     echo "Rebuilding image from scratch..."
@@ -81,6 +94,8 @@ if [ "${WITH_WAYPOINTS}" = "true" ]; then
     echo "Waypoint publishing enabled — start navigator for robot ${ROBOT_ID}:"
     echo "  ./run_navigator.sh ${ROBOT_ID}"
 fi
-if [ -n "${PEERS}" ]; then
+if [ "${NO_COLLISION}" = "1" ]; then
+    echo "Collision avoidance: OFF (peer repulsion disabled)"
+elif [ -n "${PEERS}" ]; then
     echo "Peer repulsion active against robot(s): ${PEERS}"
 fi
