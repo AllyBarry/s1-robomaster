@@ -139,49 +139,46 @@ class GradientFieldRFFBLR:
 
 
 # ------------------------------------------------------------------ #
-#  UCB action selection (8-connected neighbours)
+#  UCB action selection (4-connected)
 # ------------------------------------------------------------------ #
 
-NEIGHBOR_OFFSETS: list[tuple[int, int]] = [
-    (-1, -1), (-1, 0), (-1, 1),
-    ( 0, -1),          ( 0, 1),
-    ( 1, -1), ( 1, 0), ( 1, 1),
-]
+ACTION_DROW = [-1, 1, 0, 0]
+ACTION_DCOL = [0, 0, -1, 1]
+INVALID = -1e9
 
 
 def ucb_select(dx_mu, dx_sig, dy_mu, dy_sig, row, col, alpha=1.0, beta=1.0,
                penalty=None):
     """
-    UCB over 8-connected neighbour cells. For each in-bounds neighbour
-    (nr, nc), project the 2-D gradient belief at the destination onto the
-    unit move direction to get the predicted Δreward mean and std (the
-    x/y BLRs are independent). Score = α·μ + β·σ, minus an optional
-    destination-cell `penalty` for peer repulsion. Out-of-bounds neighbours
-    are filtered out; ties are broken uniformly at random.
-
-    Returns (new_row, new_col).
+    4-connected UCB action selection. `penalty`, if given, is an HxW array of
+    non-negative costs subtracted from each action's score at the *destination*
+    cell — used to implement peer repulsion at the planner layer.
     """
     H, W = dx_mu.shape
-    best_score = -math.inf
-    best_cells: list[tuple[int, int]] = []
-    for dr, dc in NEIGHBOR_OFFSETS:
-        nr, nc = row + dr, col + dc
-        if not (0 <= nr < H and 0 <= nc < W):
-            continue
-        # (col → x, row → y); normalise so diagonals aren't double-weighted.
-        norm = math.hypot(dr, dc)
-        ux, uy = dc / norm, dr / norm
-        mean = ux * dx_mu[nr, nc] + uy * dy_mu[nr, nc]
-        var = (ux * dx_sig[nr, nc]) ** 2 + (uy * dy_sig[nr, nc]) ** 2
-        score = alpha * mean + beta * math.sqrt(var)
+    ucb = np.full(4, INVALID)
+    if row > 0:
+        s = alpha * (-dy_mu[row - 1, col]) + beta * dy_sig[row - 1, col]
         if penalty is not None:
-            score -= float(penalty[nr, nc])
-        if score > best_score:
-            best_score = score
-            best_cells = [(nr, nc)]
-        elif score == best_score:
-            best_cells.append((nr, nc))
-    return random.choice(best_cells)
+            s -= penalty[row - 1, col]
+        ucb[0] = s
+    if row < H - 1:
+        s = alpha * dy_mu[row, col] + beta * dy_sig[row, col]
+        if penalty is not None:
+            s -= penalty[row + 1, col]
+        ucb[1] = s
+    if col > 0:
+        s = alpha * (-dx_mu[row, col - 1]) + beta * dx_sig[row, col - 1]
+        if penalty is not None:
+            s -= penalty[row, col - 1]
+        ucb[2] = s
+    if col < W - 1:
+        s = alpha * dx_mu[row, col] + beta * dx_sig[row, col]
+        if penalty is not None:
+            s -= penalty[row, col + 1]
+        ucb[3] = s
+    max_val = np.max(ucb)
+    candidates = np.flatnonzero(ucb == max_val)
+    return int(random.choice(candidates)), ucb
 
 
 # ------------------------------------------------------------------ #
@@ -461,11 +458,13 @@ class BeliefNode(Node):
             dx_mu, dy_mu = self.model.gradient_grids()
             dx_sig, dy_sig = self.model.sigma_grids()
             penalty = self._peer_penalty_grid()
-            new_row, new_col = ucb_select(
+            action, _ = ucb_select(
                 dx_mu, dx_sig, dy_mu, dy_sig, row, col,
                 alpha=self.ucb_alpha, beta=self.ucb_beta,
                 penalty=penalty,
             )
+            new_row = max(0, min(self.H - 1, row + ACTION_DROW[action]))
+            new_col = max(0, min(self.W - 1, col + ACTION_DCOL[action]))
             self.waypoint_cell = (new_row, new_col)
             self.get_logger().info(
                 f"New waypoint cell ({new_row}, {new_col}) -> "
