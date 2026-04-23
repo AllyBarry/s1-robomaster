@@ -4,6 +4,7 @@ services:
   rviz:
     build:
       context: .
+      network: host
       dockerfile: Dockerfile
     container_name: rviz2_viewer
     network_mode: host
