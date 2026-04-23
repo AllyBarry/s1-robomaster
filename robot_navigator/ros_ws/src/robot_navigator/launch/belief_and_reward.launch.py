@@ -2,6 +2,7 @@ from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription, OpaqueFunction
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration
+from launch_ros.actions import Node
 from ament_index_python.packages import get_package_share_directory
 import os
 
@@ -21,16 +22,30 @@ def _launch_setup(context, *args, **kwargs):
 
     actions = []
 
-    gf_launch = os.path.join(pkg_share, "launch", "global_feedback.launch.py")
-    actions.append(IncludeLaunchDescription(
-        PythonLaunchDescriptionSource(gf_launch),
-        launch_arguments={
-            "formation": formation,
-            "formation_spacing": spacing,
-            "assignment": assignment,
-        }.items(),
+    # global_feedback is spawned directly (not via IncludeLaunchDescription)
+    # so we can override `robot_ids` alongside the formation args. Keeps the
+    # bundle self-contained without teaching global_feedback.launch.py about
+    # every parameter a scenario might want to override.
+    gf_cfg = os.path.join(pkg_share, "config", "global_feedback.yaml")
+    actions.append(Node(
+        package="robot_navigator",
+        executable="global_feedback",
+        name="global_feedback",
+        parameters=[
+            gf_cfg,
+            {
+                "formation": formation,
+                "formation_spacing": float(spacing),
+                "assignment": assignment,
+                "robot_ids": robot_ids,
+            },
+        ],
+        output="screen",
     ))
 
+    # belief.launch.py already accepts every per-robot knob we need, so
+    # we compose it via IncludeLaunchDescription — no point duplicating
+    # its parameter-handling logic here.
     belief_launch = os.path.join(pkg_share, "launch", "belief.launch.py")
     for rid in robot_ids:
         peers = ",".join(str(p) for p in robot_ids if p != rid)
@@ -51,7 +66,7 @@ def generate_launch_description():
         DeclareLaunchArgument(
             "robot_ids",
             default_value="0,1,2",
-            description="Comma-separated robot IDs to spawn belief nodes for",
+            description="Comma-separated robot IDs — applied to global_feedback and spawned as beliefs",
         ),
         DeclareLaunchArgument(
             "formation",
