@@ -42,14 +42,15 @@ _PALETTE_BGR = [
     (180, 100, 220),  # purple
 ]
 
-# Ordered codec fallback: avc1/mp4v into .mp4, then MJPG into .avi as a
-# last resort. Jetson's apt opencv is built against ffmpeg, but the mp4v
-# muxer in some builds silently produces files that can't be reopened —
-# probing here catches that at startup instead of at end-of-run.
+# Ordered codec fallback: MJPG/.avi first because it's the one combo that
+# reliably works across Jetson apt opencv builds — avc1/mp4v both pass
+# cv2.VideoWriter.isOpened() even when the underlying h264/mpeg4 encoder
+# is missing or broken, producing "opened but garbage" files. Trading the
+# .mp4 extension for a file that actually plays is the right default.
 _CODEC_CHAIN = [
-    ("avc1", ".mp4"),
-    ("mp4v", ".mp4"),
     ("MJPG", ".avi"),
+    ("mp4v", ".mp4"),
+    ("avc1", ".mp4"),
 ]
 
 
