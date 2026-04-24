@@ -30,16 +30,20 @@
 #   --scenario <name>              Episode name — CSV/JSON filename stem
 #   --duration <sec>               Auto-stop logger after N seconds (0 = run until killed)
 #   --sample-hz <float>            Logger sample rate
+#   --run-name <name>              Override the auto-generated run folder name
+#                                  (default: {scenario}_{YYYYMMDD_HHMMSS})
 #
-# Logs (CSV + JSON sidecar) land in ./experiment_logs/ on the host.
-# Plot them offline with:
-#   python3 scripts/plot_experiment.py experiment_logs/
+# Each invocation writes to its own folder under ./experiment_logs/ — prior
+# runs are never overwritten. The folder contains:
+#   {scenario}.csv, {scenario}.json, plots/ (populated by the plotter).
+# Plot offline with:
+#   python3 scripts/plot_experiment.py experiment_logs/{run_folder}/
 #
 # Examples:
 #   ./run_belief_and_reward.sh                                   # all defaults
 #   ./run_belief_and_reward.sh --scenario baseline --duration 120
 #   ./run_belief_and_reward.sh --robots 0,1,2 --formation line --spacing 0.4
-#   ./run_belief_and_reward.sh --formation triangle --center-x 1.5 --center-y 1.0
+#   ./run_belief_and_reward.sh --formation triangle --center-x 1.25 --center-y 1.1
 #   ./run_belief_and_reward.sh --rebuild --robots 0,1 --with-waypoints
 
 set -e
@@ -56,6 +60,7 @@ COLLISION_AVOIDANCE=""
 SCENARIO=""
 DURATION=""
 SAMPLE_HZ=""
+RUN_NAME=""
 
 while [ "$#" -gt 0 ]; do
     case "$1" in
@@ -115,8 +120,12 @@ while [ "$#" -gt 0 ]; do
             SAMPLE_HZ="$2"
             shift 2
             ;;
+        --run-name)
+            RUN_NAME="$2"
+            shift 2
+            ;;
         -h|--help)
-            sed -n '2,43p' "$0"
+            sed -n '2,46p' "$0"
             exit 0
             ;;
         *)
@@ -137,9 +146,24 @@ fi
 #   DOCKER_BUILDKIT=0 docker build --network=host -t robot_navigator-robot_navigator .
 # or ensure `iptable_raw` is loaded: `sudo modprobe iptable_raw`
 
+# One folder per invocation: {scenario}_{timestamp} unless --run-name is
+# given. Pre-created on the host so it inherits user ownership; the
+# bind-mounted volume surfaces container writes into it. Prior runs are
+# never overwritten.
+SCENARIO_NAME="${SCENARIO:-run}"
+if [ -z "${RUN_NAME}" ]; then
+    RUN_NAME="${SCENARIO_NAME}_$(date +%Y%m%d_%H%M%S)"
+fi
+HOST_RUN_DIR="./experiment_logs/${RUN_NAME}"
+CONTAINER_RUN_DIR="/ros_ws/experiment_logs/${RUN_NAME}"
+mkdir -p "${HOST_RUN_DIR}"
+
 # Only forward args the user actually supplied; anything omitted falls
-# back to the launch file's defaults.
+# back to the launch file's defaults. `scenario` and `log_dir` are always
+# forwarded so the unique run folder is honoured.
 LAUNCH_ARGS=()
+LAUNCH_ARGS+=("scenario:=${SCENARIO_NAME}")
+LAUNCH_ARGS+=("log_dir:=${CONTAINER_RUN_DIR}")
 [ -n "${ROBOT_IDS}"         ] && LAUNCH_ARGS+=("robot_ids:=${ROBOT_IDS}")
 [ -n "${FORMATION}"         ] && LAUNCH_ARGS+=("formation:=${FORMATION}")
 [ -n "${SPACING}"           ] && LAUNCH_ARGS+=("formation_spacing:=${SPACING}")
@@ -148,7 +172,6 @@ LAUNCH_ARGS=()
 [ -n "${ASSIGNMENT}"        ] && LAUNCH_ARGS+=("assignment:=${ASSIGNMENT}")
 [ -n "${PUBLISH_WAYPOINTS}" ] && LAUNCH_ARGS+=("publish_waypoints:=${PUBLISH_WAYPOINTS}")
 [ -n "${COLLISION_AVOIDANCE}" ] && LAUNCH_ARGS+=("collision_avoidance:=${COLLISION_AVOIDANCE}")
-[ -n "${SCENARIO}"          ] && LAUNCH_ARGS+=("scenario:=${SCENARIO}")
 [ -n "${DURATION}"          ] && LAUNCH_ARGS+=("duration_sec:=${DURATION}")
 [ -n "${SAMPLE_HZ}"         ] && LAUNCH_ARGS+=("sample_hz:=${SAMPLE_HZ}")
 
@@ -162,6 +185,10 @@ docker compose run --remove-orphans -d \
     ros2 launch robot_navigator belief_and_reward.launch.py "${LAUNCH_ARGS[@]}"
 
 echo "Started ${CONTAINER_NAME} — follow with: docker logs -f ${CONTAINER_NAME}"
+echo ""
+echo "Run folder: ${HOST_RUN_DIR}"
+echo "Plot after the run with:"
+echo "  python3 scripts/plot_experiment.py ${HOST_RUN_DIR}"
 echo ""
 echo "Reward + per-robot beliefs are up. Launch navigators separately:"
 echo "  ./run_navigator.sh 0 1 2"

@@ -12,9 +12,13 @@ Renders, per scenario:
 Plus a combined overlay across all scenarios found:
   - reward_comparison.png       : reward(t) for every run on one axis
 
+Output layout:
+  By default plots land in `{log_dir}/plots/` so they don't mix with the
+  raw CSVs/JSONs in the same experiment folder. Override with `--out`.
+
 Usage:
-    python3 scripts/plot_experiment.py experiment_logs/
-    python3 scripts/plot_experiment.py experiment_logs/ --out plots/
+    python3 scripts/plot_experiment.py experiment_logs/baseline_20260424_120000/
+    python3 scripts/plot_experiment.py experiment_logs/run/ --out plots/
 """
 
 import argparse
@@ -65,10 +69,14 @@ def _robot_ids_from(df: pd.DataFrame, meta: dict) -> list[int]:
     return sorted(set(ids))
 
 
+_DEFAULT_FIELD_BOUNDS = {"x_min": 0.0, "x_max": 2.5, "y_min": 0.0, "y_max": 2.2}
+
+
 def _plot_trajectories(scen: str, df: pd.DataFrame, meta: dict,
                        out: pathlib.Path):
     ids = _robot_ids_from(df, meta)
     targets = meta.get("targets", [])
+    bounds = meta.get("field_bounds", _DEFAULT_FIELD_BOUNDS)
     fig, ax = plt.subplots(figsize=(6.5, 5.0))
     for rid in ids:
         xs = df.get(f"robot_{rid}_x")
@@ -94,6 +102,8 @@ def _plot_trajectories(scen: str, df: pd.DataFrame, meta: dict,
     ax.set_title(f"Trajectories — {scen}")
     ax.set_xlabel("x (m)")
     ax.set_ylabel("y (m)")
+    ax.set_xlim(bounds["x_min"], bounds["x_max"])
+    ax.set_ylim(bounds["y_min"], bounds["y_max"])
     ax.set_aspect("equal")
     ax.grid(alpha=0.3)
     ax.legend(fontsize=8, loc="best")
@@ -149,13 +159,13 @@ def main():
     parser.add_argument("log_dir", type=pathlib.Path,
                         help="Directory containing {scenario}.csv + {scenario}.json")
     parser.add_argument("--out", type=pathlib.Path, default=None,
-                        help="Output directory (default: same as log_dir)")
+                        help="Output directory (default: {log_dir}/plots)")
     args = parser.parse_args()
 
     if not args.log_dir.is_dir():
         print(f"not a directory: {args.log_dir}", file=sys.stderr)
         sys.exit(1)
-    out_dir = args.out or args.log_dir
+    out_dir = args.out or (args.log_dir / "plots")
     out_dir.mkdir(parents=True, exist_ok=True)
 
     runs = _load_runs(args.log_dir)

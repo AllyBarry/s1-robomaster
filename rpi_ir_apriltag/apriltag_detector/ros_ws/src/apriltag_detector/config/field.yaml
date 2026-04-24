@@ -8,10 +8,10 @@
 
     # Corresponding real-world field positions in meters, flattened [x0,y0, x1,y1, ...]
     # Camera top = field +Y (far edge), bottom = field Y=0 (near edge)
-    # top-left=10:  (0, 2)   top-right=12:  (3, 2)
-    # bottom-right=11: (3, 0)  bottom-left=13: (0, 0)
-    corner_tag_positions: [0.0, 2.0, 3.0, 2.0, 3.0, 0.0, 0.0, 0.0]
+    # top-left=10:  (0, 2.2)   top-right=12:  (2.5, 2.2)
+    # bottom-right=11: (2.5, 0)  bottom-left=13: (0, 0)
+    corner_tag_positions: [0.0, 2.2, 2.5, 2.2, 2.5, 0.0, 0.0, 0.0]
 
     # Field dimensions (for reference / validation)
-    field_width: 3.0
-    field_height: 2.0
+    field_width: 2.5
+    field_height: 2.2
