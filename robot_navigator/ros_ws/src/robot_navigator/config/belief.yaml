@@ -45,3 +45,12 @@ belief_node:
     repulsion_weight: 3.0
     repulsion_radius: 0.25
     peer_pose_timeout: 1.0
+    # Planner-layer (UCB) repulsion is OFF by default. Flip to true here
+    # or toggle live by publishing Bool on /collision_avoidance_enabled.
+    repulsion_enabled: false
+    # Edge-margin penalty: keeps UCB waypoints away from the grid
+    # boundary. Linear falloff — cells `edge_margin_cells` or more from
+    # every edge pay nothing; the outermost ring pays the full weight.
+    # Set edge_margin_cells: 0 to disable.
+    edge_margin_cells: 2
+    edge_margin_weight: 5.0
