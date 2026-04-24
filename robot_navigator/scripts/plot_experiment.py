@@ -69,7 +69,7 @@ def _robot_ids_from(df: pd.DataFrame, meta: dict) -> list[int]:
     return sorted(set(ids))
 
 
-_DEFAULT_FIELD_BOUNDS = {"x_min": 0.0, "x_max": 2.5, "y_min": 0.0, "y_max": 2.2}
+_DEFAULT_FIELD_BOUNDS = {"x_min": 0.0, "x_max": 3.0, "y_min": 0.0, "y_max": 3.0}
 
 
 def _plot_trajectories(scen: str, df: pd.DataFrame, meta: dict,

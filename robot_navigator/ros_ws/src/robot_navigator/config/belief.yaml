@@ -2,15 +2,14 @@ belief_node:
   ros__parameters:
     robot_id: 0
     # Grid footprint in field metres. Matches the apriltag_detector field
-    # (0,0) to (2.5,2.2) defined in rpi_ir_apriltag/.../config/field.yaml.
-    # 12×11 at 0.2 m → 2.4 m × 2.2 m; grid sits inside the field so the
-    # RViz boundary and belief overlay align (the far 0.1 m of x is
-    # within the robot's wheel-centre exclusion zone anyway).
+    # (0,0) to (3.0,3.0) defined in rpi_ir_apriltag/.../config/field.yaml.
+    # 15×15 at 0.2 m → 3.0 m × 3.0 m, exactly matching the physical field
+    # so the RViz boundary and belief overlay align.
     grid_resolution: 0.2
     grid_origin_x: 0.0
     grid_origin_y: 0.0
-    grid_width: 12
-    grid_height: 11
+    grid_width: 15
+    grid_height: 15
     # Belief updates once per new grid cell. This is a small metric floor
     # (m) applied on top to ignore pose-noise jitter. Keep well under
     # grid_resolution.

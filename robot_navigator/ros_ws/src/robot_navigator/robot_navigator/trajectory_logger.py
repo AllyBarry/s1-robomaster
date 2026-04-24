@@ -46,9 +46,9 @@ class TrajectoryLoggerNode(Node):
         # offline plotter can draw full-field axes regardless of where
         # the robots actually explored.
         self.declare_parameter("field_x_min", 0.0)
-        self.declare_parameter("field_x_max", 2.5)
+        self.declare_parameter("field_x_max", 3.0)
         self.declare_parameter("field_y_min", 0.0)
-        self.declare_parameter("field_y_max", 2.2)
+        self.declare_parameter("field_y_max", 3.0)
 
         self.robot_ids = [int(v) for v in self.get_parameter("robot_ids").value]
         self.log_dir = pathlib.Path(self.get_parameter("log_dir").value)
