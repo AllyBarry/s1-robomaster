@@ -17,7 +17,7 @@ from rclpy.node import Node
 FIELD = 3.0
 CENTER = FIELD / 2.0
 # Stay off the corner AprilTags — parking on them blocks the homography.
-CORNER_INSET = 0.25
+CORNER_INSET = 0.4
 TOPIC_RE = re.compile(r"^/field/robot_(\d+)/pose$")
 
 SHAPES = {
