@@ -314,6 +314,10 @@ class BeliefNode(Node):
 
         # Peer position cache: {robot_id: (pos, stamp_monotonic)}.
         self.peer_positions: dict[int, tuple[np.ndarray, float]] = {}
+        # Peer waypoint cache — used to avoid argmax'ing onto a cell a
+        # peer has already committed to. Only populated for lower-ID
+        # peers (priority rule: higher-ID robots yield, lower-IDs don't).
+        self.peer_waypoints: dict[int, tuple[np.ndarray, float]] = {}
 
         self.create_subscription(
             PoseStamped, f"/field/robot_{self.robot_id}/pose", self._on_pose, 10
@@ -327,6 +331,16 @@ class BeliefNode(Node):
                 lambda msg, i=pid: self._on_peer_pose(i, msg),
                 10,
             )
+            # Priority tiebreak: only subscribe to waypoints of peers
+            # whose IDs are lower than our own. Higher-ID peers will see
+            # our waypoint and yield to us; we never yield to them.
+            if pid < self.robot_id:
+                self.create_subscription(
+                    PointStamped,
+                    f"/robot_{pid}/waypoint",
+                    lambda msg, i=pid: self._on_peer_waypoint(i, msg),
+                    10,
+                )
 
         self.create_subscription(
             Bool, avoid_toggle_topic, self._on_avoidance_toggle, 10
@@ -373,6 +387,10 @@ class BeliefNode(Node):
         pos = np.array([msg.pose.position.x, msg.pose.position.y])
         self.peer_positions[pid] = (pos, time.monotonic())
 
+    def _on_peer_waypoint(self, pid: int, msg: PointStamped):
+        wp = np.array([msg.point.x, msg.point.y])
+        self.peer_waypoints[pid] = (wp, time.monotonic())
+
     def _on_avoidance_toggle(self, msg: Bool):
         was = self.rep_enabled
         self.rep_enabled = bool(msg.data)
@@ -383,6 +401,16 @@ class BeliefNode(Node):
     def _fresh_peer_positions(self) -> list[np.ndarray]:
         now = time.monotonic()
         return [p for p, t in self.peer_positions.values()
+                if now - t <= self.peer_timeout]
+
+    def _fresh_peer_waypoints(self) -> list[np.ndarray]:
+        """Lower-ID peers' most recent waypoints within peer_timeout.
+
+        Same freshness window as positions — a stale waypoint expires
+        so we don't keep yielding to a muted peer indefinitely.
+        """
+        now = time.monotonic()
+        return [wp for wp, t in self.peer_waypoints.values()
                 if now - t <= self.peer_timeout]
 
     def _peer_penalty_grid(self) -> np.ndarray | None:
@@ -399,20 +427,24 @@ class BeliefNode(Node):
         return penalty
 
     def _peer_mask_grid(self) -> np.ndarray | None:
-        """Bool HxW grid — True at cells within mask_radius of any fresh peer.
+        """Bool HxW grid — True at cells that must not be chosen as waypoints.
 
-        Destinations flagged here are hard-rejected by ucb_select, giving
-        a definitive "never enter" guarantee regardless of gradient or σ.
-        Returns None when the mask is disabled or no cells are flagged.
+        Hazard sources (union):
+          - every fresh peer's current POSITION (symmetric — physical
+            collision is mutual)
+          - every fresh LOWER-ID peer's published WAYPOINT (asymmetric —
+            higher-ID robots yield to lower-ID claims)
+
+        Returns None when disabled or no cells are flagged.
         """
         if not self.rep_enabled or self.mask_radius <= 0.0:
             return None
-        peers = self._fresh_peer_positions()
-        if not peers:
+        hazards = self._fresh_peer_positions() + self._fresh_peer_waypoints()
+        if not hazards:
             return None
         r2 = self.mask_radius * self.mask_radius
         mask = np.zeros((self.H, self.W), dtype=bool)
-        for p in peers:
+        for p in hazards:
             d2 = (self._grid_X - p[0]) ** 2 + (self._grid_Y - p[1]) ** 2
             mask |= d2 <= r2
         return mask if mask.any() else None
