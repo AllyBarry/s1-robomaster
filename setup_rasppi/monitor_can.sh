@@ -3,6 +3,8 @@
 SESSION="canmon"
 CONTAINER="robomaster_bridge"
 
+export PATH="$PWD:$PATH"
+
 tmux has-session -t "$SESSION" 2>/dev/null && exec tmux attach -t "$SESSION"
 
 # Window 0: host monitoring
