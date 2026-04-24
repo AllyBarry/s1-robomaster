@@ -24,7 +24,7 @@ services:
       - QT_X11_NO_MITSHM=1
     entrypoint: ["/entrypoint.sh"]
     command: ros2 launch rpi_camera_streamer webcam.launch.py
-    restart: "no"
+    restart: unless-stopped
 
   calibrate:
     build: 
