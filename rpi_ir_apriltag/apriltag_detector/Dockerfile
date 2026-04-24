@@ -14,7 +14,6 @@ RUN apt-get update && apt-get install -y \
     ros-humble-apriltag-ros \
     ros-humble-cv-bridge \
     ros-humble-v4l2-camera \
-    ros-humble-image-transport-plugins \
     v4l-utils \
     python3-opencv \
     && rm -rf /var/lib/apt/lists/*

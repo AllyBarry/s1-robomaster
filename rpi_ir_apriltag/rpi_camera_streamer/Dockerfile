@@ -17,7 +17,6 @@ RUN apt-get update && apt-get install -y \
     ros-humble-v4l2-camera \
     # ros-humble-camera-calibration \
     ros-humble-image-pipeline \
-    ros-humble-image-transport-plugins \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /ros_ws
