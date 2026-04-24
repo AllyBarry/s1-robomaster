@@ -4,14 +4,15 @@ Records a bird's-eye, field-rectified camera stream with trajectory overlays.
 Each incoming source frame is warped so that the four field corner tags
 land exactly at the frame corners — the output is cropped to the field
 boundary and the perspective distortion is removed. Trails and target
-crosses are drawn in the rectified image directly in field metres, so
-they line up with the video regardless of camera mounting angle.
+crosses are drawn *after* warping, directly in rectified pixel space, so
+they stay crisp instead of being skewed with the underlying frame.
 
-Subscribes to the apriltag debug image, the inverse homography published
-by field_localizer (used to derive the source→rectified warp), each
-robot's `/field/robot_{id}/pose`, and `/target_markers`. Output drops
-into the run folder as `{scenario}.mp4` alongside the CSV, JSON
-sidecar, and `plots/` directory.
+Subscribes to the *rectified* raw camera image (so detection_overlay's
+burnt-in AprilTag labels don't get warped into smears), the inverse
+homography published by field_localizer, each robot's
+`/field/robot_{id}/pose`, and `/target_markers`. Output drops into the
+run folder as `{scenario}.mp4` alongside the CSV, JSON sidecar, and
+`plots/` directory.
 """
 
 import atexit
@@ -58,7 +59,7 @@ class VideoRecorderNode(Node):
         self.declare_parameter("robot_ids", [0, 1, 2])
         self.declare_parameter("log_dir", "/ros_ws/experiment_logs")
         self.declare_parameter("scenario", "run")
-        self.declare_parameter("image_topic", "/detections/image")
+        self.declare_parameter("image_topic", "/webcam/image_rect")
         self.declare_parameter("homography_topic", "/field/homography_inv")
         self.declare_parameter("markers_topic", "/target_markers")
         self.declare_parameter("fps", 5.0)
@@ -120,6 +121,13 @@ class VideoRecorderNode(Node):
         self._frames_received = 0
         self._frames_written = 0
         self._homography_updates = 0
+
+        # /webcam/image_rect streams at the full camera rate (~30 Hz);
+        # output mp4 is 5 fps. Drop anything arriving within one frame
+        # period of the last write so ffmpeg sees a real-time stream
+        # instead of a 6x speedup.
+        self._min_write_dt = 1.0 / self.fps if self.fps > 0 else 0.0
+        self._last_write_ts: float | None = None
 
         # Latched so we still receive the last-published H^-1 even if
         # field_localizer was already running before this node came up.
@@ -191,6 +199,22 @@ class VideoRecorderNode(Node):
             )
 
     def _on_image(self, msg: Image):
+        with self._lock:
+            self._frames_received += 1
+
+        # Rate-limit before doing anything expensive (cv_bridge, warp).
+        # Use msg stamp when available so the recorded video matches
+        # wall-clock pacing even if a source burst catches up.
+        stamp = msg.header.stamp
+        now = stamp.sec + stamp.nanosec * 1e-9
+        if now <= 0.0:
+            now = self.get_clock().now().nanoseconds * 1e-9
+        if (
+            self._last_write_ts is not None
+            and (now - self._last_write_ts) < self._min_write_dt
+        ):
+            return
+
         try:
             frame = self.bridge.imgmsg_to_cv2(msg, desired_encoding="bgr8")
         except Exception as e:
@@ -198,7 +222,6 @@ class VideoRecorderNode(Node):
             return
 
         with self._lock:
-            self._frames_received += 1
             M = None if self.warp_M is None else self.warp_M.copy()
             trails = {rid: list(pts) for rid, pts in self.trails.items()}
             targets = list(self.targets) if self.targets else []
@@ -209,6 +232,8 @@ class VideoRecorderNode(Node):
         if M is None:
             return
 
+        # Rectify first, THEN overlay: keeps trails/targets/text crisp
+        # instead of being stretched by the perspective warp.
         warped = cv2.warpPerspective(
             frame, M, (self.out_w, self.out_h),
             flags=cv2.INTER_LINEAR,
@@ -221,6 +246,7 @@ class VideoRecorderNode(Node):
                 return
 
         self._draw_field_overlay(warped, trails, targets)
+        self._last_write_ts = now
         try:
             self.writer.stdin.write(warped.tobytes())
         except (BrokenPipeError, ValueError):
@@ -292,24 +318,34 @@ class VideoRecorderNode(Node):
                 # bright and dark patches of the rectified field.
                 cv2.drawMarker(frame, (int(x), int(y)), (0, 0, 0),
                                markerType=cv2.MARKER_TILTED_CROSS,
-                               markerSize=24, thickness=4)
+                               markerSize=28, thickness=5,
+                               line_type=cv2.LINE_AA)
                 cv2.drawMarker(frame, (int(x), int(y)), (255, 255, 255),
                                markerType=cv2.MARKER_TILTED_CROSS,
-                               markerSize=24, thickness=2)
+                               markerSize=28, thickness=2,
+                               line_type=cv2.LINE_AA)
 
         for rid, pts in trails.items():
             if not pts:
                 continue
             pix = self._field_to_pixel(np.array(pts, dtype=np.float32))
             color = self._colors.get(rid, (200, 200, 200))
+            # Dark halo under the trail so coloured lines stay readable
+            # over the field's lighter patches.
             if len(pix) >= 2:
+                cv2.polylines(frame, [pix], isClosed=False, color=(0, 0, 0),
+                              thickness=5, lineType=cv2.LINE_AA)
                 cv2.polylines(frame, [pix], isClosed=False, color=color,
-                              thickness=2, lineType=cv2.LINE_AA)
+                              thickness=3, lineType=cv2.LINE_AA)
             cx, cy = int(pix[-1, 0]), int(pix[-1, 1])
-            cv2.circle(frame, (cx, cy), 5, color, -1, lineType=cv2.LINE_AA)
-            cv2.putText(frame, f"r{rid}", (cx + 8, cy - 8),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 2,
-                        lineType=cv2.LINE_AA)
+            cv2.circle(frame, (cx, cy), 9, (0, 0, 0), -1, lineType=cv2.LINE_AA)
+            cv2.circle(frame, (cx, cy), 7, color, -1, lineType=cv2.LINE_AA)
+            label = f"r{rid}"
+            lx, ly = cx + 10, cy - 10
+            cv2.putText(frame, label, (lx, ly), cv2.FONT_HERSHEY_SIMPLEX,
+                        0.6, (0, 0, 0), 4, lineType=cv2.LINE_AA)
+            cv2.putText(frame, label, (lx, ly), cv2.FONT_HERSHEY_SIMPLEX,
+                        0.6, color, 2, lineType=cv2.LINE_AA)
 
     def _log_status(self):
         # Warn loudly if we've been up but nothing is flowing — most
