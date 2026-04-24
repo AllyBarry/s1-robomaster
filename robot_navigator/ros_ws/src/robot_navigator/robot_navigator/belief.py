@@ -7,10 +7,11 @@ Subscribes to:
     /global_reward           std_msgs/Float32
 
 Publishes:
-    /robot_{id}/belief/uncertainty   nav_msgs/OccupancyGrid   (σ heatmap)
-    /robot_{id}/belief/gradient_mag  nav_msgs/OccupancyGrid   (|∇reward| heatmap)
-    /robot_{id}/belief/gradients     visualization_msgs/MarkerArray (arrows)
-    /robot_{id}/waypoint             geometry_msgs/PointStamped   (optional)
+    /robot_{id}/belief/uncertainty          nav_msgs/OccupancyGrid   (σ heatmap)
+    /robot_{id}/belief/gradient_mag         nav_msgs/OccupancyGrid   (|∇reward| heatmap)
+    /robot_{id}/belief/gradients            visualization_msgs/MarkerArray (arrows)
+    /robot_{id}/waypoint                    geometry_msgs/PointStamped    (optional)
+    /field/robot_{id}/hold_request          std_msgs/Bool  (latched — 1-bit probe channel)
 
 Update rule: cache (position, reward). When the robot crosses into a new
 grid cell (and has moved at least `min_displacement` metres to filter
@@ -24,6 +25,7 @@ gradient belief and publishes a waypoint for the `robot_navigator` to
 drive to. Otherwise it's purely a belief-visualisation node.
 """
 
+import collections
 import math
 import random
 import time
@@ -31,6 +33,7 @@ import time
 import numpy as np
 import rclpy
 from rclpy.node import Node
+from rclpy.qos import QoSDurabilityPolicy, QoSProfile, QoSReliabilityPolicy
 
 from geometry_msgs.msg import Point, PointStamped, PoseStamped, Vector3
 from nav_msgs.msg import OccupancyGrid
@@ -256,6 +259,26 @@ class BeliefNode(Node):
         # explore bonus). 0 or non-positive values disable.
         self.declare_parameter("edge_margin_cells", 2)
         self.declare_parameter("edge_margin_weight", 5.0)
+        # Hold / probe mechanism — 1-bit coordination channel for credit
+        # assignment: when one robot raises its bit peers freeze, so Δr
+        # is attributable to the single mover. Symmetric (every robot
+        # subscribes to every peer); priority tie-break by robot_id.
+        self.declare_parameter("hold_enabled", True)
+        # How long my bit stays raised after I raise it — long enough to
+        # traverse ~1 cell at expected speed (0.2 m @ ~0.1 m/s ≈ 2 s + slack).
+        self.declare_parameter("hold_duration_sec", 3.0)
+        # After my bit drops, block re-raising for this long so peers get
+        # a chance to commit.
+        self.declare_parameter("hold_cooldown_sec", 4.0)
+        # Raise bit only if my best UCB score beats second-best by this
+        # margin — prevents holding on ties where movement is arbitrary.
+        self.declare_parameter("hold_info_margin", 1.0)
+        # Window (s) over which we measure Δr to gate the hold trigger.
+        self.declare_parameter("hold_reward_window_sec", 3.0)
+        # Below this peak-to-peak reward change over the window the group
+        # is considered "stuck" — a commit by one robot is then useful to
+        # re-seed learning.
+        self.declare_parameter("hold_reward_delta_threshold", 0.05)
 
         self.robot_id = int(self.get_parameter("robot_id").value)
         self.res = float(self.get_parameter("grid_resolution").value)
@@ -282,6 +305,16 @@ class BeliefNode(Node):
         avoid_toggle_topic = str(self.get_parameter("avoidance_toggle_topic").value)
         self.edge_margin_cells = int(self.get_parameter("edge_margin_cells").value)
         self.edge_margin_weight = float(self.get_parameter("edge_margin_weight").value)
+        self.hold_enabled = bool(self.get_parameter("hold_enabled").value)
+        self.hold_duration = float(self.get_parameter("hold_duration_sec").value)
+        self.hold_cooldown = float(self.get_parameter("hold_cooldown_sec").value)
+        self.hold_info_margin = float(self.get_parameter("hold_info_margin").value)
+        self.hold_reward_window = float(
+            self.get_parameter("hold_reward_window_sec").value
+        )
+        self.hold_reward_delta_thr = float(
+            self.get_parameter("hold_reward_delta_threshold").value
+        )
 
         # Precomputed world-coord mesh for fast penalty evaluation.
         xs = self.ox + (np.arange(self.W) + 0.5) * self.res
@@ -318,11 +351,28 @@ class BeliefNode(Node):
         # peer has already committed to. Only populated for lower-ID
         # peers (priority rule: higher-ID robots yield, lower-IDs don't).
         self.peer_waypoints: dict[int, tuple[np.ndarray, float]] = {}
+        # Hold/probe state.
+        # peer_holds: {pid: (flag, stamp_mono)} — last-known bit from each peer.
+        self.peer_holds: dict[int, tuple[bool, float]] = {}
+        self.own_hold: bool = False
+        self.own_hold_raised_at: float | None = None  # monotonic
+        self.own_hold_released_at: float | None = None  # monotonic
+        # (stamp_mono, reward) rolling window for Δr gating.
+        self.reward_history: collections.deque[tuple[float, float]] = (
+            collections.deque()
+        )
 
         self.create_subscription(
             PoseStamped, f"/field/robot_{self.robot_id}/pose", self._on_pose, 10
         )
         self.create_subscription(Float32, "/global_reward", self._on_reward, 10)
+
+        # Latched QoS so a peer that comes up late (or after we've
+        # already raised our bit once) picks up the current value
+        # instead of waiting for the next publish.
+        hold_qos = QoSProfile(depth=1)
+        hold_qos.durability = QoSDurabilityPolicy.TRANSIENT_LOCAL
+        hold_qos.reliability = QoSReliabilityPolicy.RELIABLE
 
         for pid in self.peer_ids:
             self.create_subscription(
@@ -341,9 +391,21 @@ class BeliefNode(Node):
                     lambda msg, i=pid: self._on_peer_waypoint(i, msg),
                     10,
                 )
+            # Symmetric: everyone subscribes to everyone's hold bit so
+            # the freeze-on-peer-hold rule is enforced both ways.
+            self.create_subscription(
+                Bool,
+                f"/field/robot_{pid}/hold_request",
+                lambda msg, i=pid: self._on_peer_hold(i, msg),
+                hold_qos,
+            )
 
         self.create_subscription(
             Bool, avoid_toggle_topic, self._on_avoidance_toggle, 10
+        )
+
+        self.hold_pub = self.create_publisher(
+            Bool, f"/field/robot_{self.robot_id}/hold_request", hold_qos,
         )
 
         self.unc_pub = self.create_publisher(
@@ -367,6 +429,15 @@ class BeliefNode(Node):
         self.create_timer(pub_period, self._publish_viz)
         if self.publish_waypoints:
             self.create_timer(0.2, self._waypoint_tick)
+            # Hold only makes sense when we're driving waypoints. Tied
+            # to the waypoint cadence so the two state machines stay in
+            # phase — a decision here is reflected on the next waypoint
+            # republish.
+            if self.hold_enabled:
+                self.create_timer(0.2, self._hold_tick)
+                # Publish initial False so peers' latched-QoS subs see us
+                # even before the first decision.
+                self._publish_hold()
 
         self.get_logger().info(
             f"belief_node[robot_{self.robot_id}] — grid {self.H}×{self.W} "
@@ -382,6 +453,13 @@ class BeliefNode(Node):
 
     def _on_reward(self, msg: Float32):
         self.current_reward = float(msg.data)
+        now = time.monotonic()
+        self.reward_history.append((now, self.current_reward))
+        # Keep the window tight — old samples would let an early learning
+        # burst mask a present-day plateau.
+        cutoff = now - self.hold_reward_window
+        while self.reward_history and self.reward_history[0][0] < cutoff:
+            self.reward_history.popleft()
 
     def _on_peer_pose(self, pid: int, msg: PoseStamped):
         pos = np.array([msg.pose.position.x, msg.pose.position.y])
@@ -390,6 +468,9 @@ class BeliefNode(Node):
     def _on_peer_waypoint(self, pid: int, msg: PointStamped):
         wp = np.array([msg.point.x, msg.point.y])
         self.peer_waypoints[pid] = (wp, time.monotonic())
+
+    def _on_peer_hold(self, pid: int, msg: Bool):
+        self.peer_holds[pid] = (bool(msg.data), time.monotonic())
 
     def _on_avoidance_toggle(self, msg: Bool):
         was = self.rep_enabled
@@ -515,6 +596,119 @@ class BeliefNode(Node):
         self.prev_reward = self.current_reward
 
     # ------------------------------------------------------------------ #
+    #  Hold / probe mechanism
+    # ------------------------------------------------------------------ #
+    def _fresh_peer_holders(self) -> list[int]:
+        now = time.monotonic()
+        return [
+            pid for pid, (flag, ts) in self.peer_holds.items()
+            if flag and (now - ts) <= self.peer_timeout
+        ]
+
+    def _recent_reward_delta(self) -> float | None:
+        # None means "not enough data" — gate callers should treat that
+        # as "don't claim stuck yet" (no hold trigger).
+        if len(self.reward_history) < 2:
+            return None
+        rewards = [r for _, r in self.reward_history]
+        return float(max(rewards) - min(rewards))
+
+    def _ucb_best_margin(self) -> float:
+        """Score gap between my best and second-best UCB action.
+
+        A large margin means my greedy move is decisive — worth claiming
+        the hold for. Near-zero margins mean actions are interchangeable
+        and holding the group wouldn't buy us cleaner Δr attribution.
+        Returns 0.0 when the belief or pose isn't ready.
+        """
+        if self.pos is None:
+            return 0.0
+        cell = world_to_grid(
+            self.pos[0], self.pos[1],
+            self.ox, self.oy, self.res, self.H, self.W,
+        )
+        if cell is None:
+            return 0.0
+        dx_mu, dy_mu = self.model.gradient_grids()
+        dx_sig, dy_sig = self.model.sigma_grids()
+        _, ucb_scores = ucb_select(
+            dx_mu, dx_sig, dy_mu, dy_sig, cell[0], cell[1],
+            alpha=self.ucb_alpha, beta=self.ucb_beta,
+            penalty=self._combined_penalty(),
+            forbidden=self._peer_mask_grid(),
+        )
+        valid = ucb_scores[ucb_scores > INVALID]
+        if valid.size < 2:
+            return 0.0
+        top2 = np.sort(valid)[-2:]
+        return float(top2[1] - top2[0])
+
+    def _hold_tick(self):
+        if not self.hold_enabled:
+            return
+        now = time.monotonic()
+        holders = self._fresh_peer_holders()
+
+        # Forced release path. Two reasons we must drop our bit here:
+        # (1) duration expired — traversal window has passed, peers
+        #     should get a chance; (2) a lower-ID peer also holds —
+        #     priority tie-break, we yield.
+        if self.own_hold:
+            expired = (
+                self.own_hold_raised_at is not None
+                and (now - self.own_hold_raised_at) >= self.hold_duration
+            )
+            lower_holder = any(pid < self.robot_id for pid in holders)
+            if expired or lower_holder:
+                self._set_own_hold(False, now)
+
+        if self.own_hold:
+            self._publish_hold()
+            return
+
+        # Don't claim hold while any peer holds — even a higher-ID peer.
+        # Double-hold is counterproductive (everyone freezes including
+        # the claimant). Wait for their duration to expire.
+        if holders:
+            self._publish_hold()
+            return
+
+        # Cooldown after our own release so we don't monopolise the bit.
+        if (
+            self.own_hold_released_at is not None
+            and (now - self.own_hold_released_at) < self.hold_cooldown
+        ):
+            self._publish_hold()
+            return
+
+        margin = self._ucb_best_margin()
+        delta_r = self._recent_reward_delta()
+        stuck = delta_r is not None and delta_r < self.hold_reward_delta_thr
+        decisive = margin > self.hold_info_margin
+        if decisive and stuck:
+            self._set_own_hold(True, now)
+            self.get_logger().info(
+                f"hold_request=True (ucb_margin={margin:.2f}, "
+                f"Δr_window={delta_r:.3f}) — peers freeze to attribute Δr"
+            )
+        self._publish_hold()
+
+    def _set_own_hold(self, flag: bool, now: float):
+        if flag == self.own_hold:
+            return
+        self.own_hold = flag
+        if flag:
+            self.own_hold_raised_at = now
+        else:
+            self.own_hold_released_at = now
+            self.get_logger().info("hold_request=False (released)")
+
+    def _publish_hold(self):
+        msg = Bool()
+        msg.data = bool(self.own_hold)
+        self.hold_pub.publish(msg)
+
+    # ------------------------------------------------------------------ #
     #  Waypoint selection (optional)
     # ------------------------------------------------------------------ #
     def _waypoint_tick(self):
@@ -539,6 +733,24 @@ class BeliefNode(Node):
             )
             return
         row, col = cell
+
+        # Hold override: if any peer has raised its bit, we freeze. Own
+        # hold doesn't freeze us — that's the whole point (I committed,
+        # I move; everyone else serializes around me).
+        if self.hold_enabled and self._fresh_peer_holders():
+            wx, wy = grid_to_world(row, col, self.ox, self.oy, self.res)
+            self.waypoint_cell = (row, col)
+            msg = PointStamped()
+            msg.header.stamp = self.get_clock().now().to_msg()
+            msg.header.frame_id = self.field_frame
+            msg.point.x = wx
+            msg.point.y = wy
+            self.waypoint_pub.publish(msg)
+            self.get_logger().info(
+                f"Peer holding → freezing at ({row},{col})",
+                throttle_duration_sec=2.0,
+            )
+            return
 
         # Replan only if we've reached (or have no) target cell; otherwise
         # fall through and republish the existing target so downstream tools
