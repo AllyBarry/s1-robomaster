@@ -21,6 +21,7 @@ setup(
             "global_feedback = robot_navigator.global_feedback:main",
             "belief = robot_navigator.belief:main",
             "trajectory_logger = robot_navigator.trajectory_logger:main",
+            "video_recorder = robot_navigator.video_recorder:main",
         ],
     },
     install_requires=["setuptools"],

@@ -26,6 +26,8 @@ def _launch_setup(context, *args, **kwargs):
     duration_sec = LaunchConfiguration("duration_sec").perform(context)
     log_dir = LaunchConfiguration("log_dir").perform(context)
     sample_hz = LaunchConfiguration("sample_hz").perform(context)
+    record_video = LaunchConfiguration("record_video").perform(context).lower() == "true"
+    video_fps = LaunchConfiguration("video_fps").perform(context)
 
     actions = []
 
@@ -83,6 +85,23 @@ def _launch_setup(context, *args, **kwargs):
         }],
         output="screen",
     ))
+
+    # Optional: record the overhead camera with per-robot trail overlays
+    # to {log_dir}/{scenario}.mp4. Relies on field_localizer publishing
+    # /field/homography_inv so trails can be projected into pixel space.
+    if record_video:
+        actions.append(Node(
+            package="robot_navigator",
+            executable="video_recorder",
+            name="video_recorder",
+            parameters=[{
+                "robot_ids": robot_ids,
+                "scenario": scenario,
+                "log_dir": log_dir,
+                "fps": float(video_fps),
+            }],
+            output="screen",
+        ))
 
     return actions
 
@@ -148,6 +167,16 @@ def generate_launch_description():
             "sample_hz",
             default_value="10.0",
             description="Logger sampling rate (Hz)",
+        ),
+        DeclareLaunchArgument(
+            "record_video",
+            default_value="false",
+            description="If true, record the overhead camera with trajectory overlays to {scenario}.mp4",
+        ),
+        DeclareLaunchArgument(
+            "video_fps",
+            default_value="5.0",
+            description="Output video frame rate (match detection_overlay's publish_rate_hz for real-time playback)",
         ),
         OpaqueFunction(function=_launch_setup),
     ])

@@ -30,12 +30,16 @@
 #   --scenario <name>              Episode name — CSV/JSON filename stem
 #   --duration <sec>               Auto-stop logger after N seconds (0 = run until killed)
 #   --sample-hz <float>            Logger sample rate
+#   --record-video                 Record overhead camera + trajectory overlay to {scenario}.mp4
+#   --no-record-video              Disable video recording (default)
+#   --video-fps <float>            Output mp4 frame rate (default: 5, matches detection_overlay)
 #   --run-name <name>              Override the auto-generated run folder name
 #                                  (default: {scenario}_{YYYYMMDD_HHMMSS})
 #
 # Each invocation writes to its own folder under ./experiment_logs/ — prior
 # runs are never overwritten. The folder contains:
-#   {scenario}.csv, {scenario}.json, plots/ (populated by the plotter).
+#   {scenario}.csv, {scenario}.json, plots/ (populated by the plotter),
+#   and {scenario}.mp4 when --record-video is set.
 # Plot offline with:
 #   python3 scripts/plot_experiment.py experiment_logs/{run_folder}/
 #
@@ -45,6 +49,7 @@
 #   ./run_belief_and_reward.sh --robots 0,1,2 --formation line --spacing 0.4
 #   ./run_belief_and_reward.sh --formation triangle --center-x 1.25 --center-y 1.1
 #   ./run_belief_and_reward.sh --rebuild --robots 0,1 --with-waypoints
+#   ./run_belief_and_reward.sh --scenario run1 --duration 60 --record-video
 
 set -e
 
@@ -60,6 +65,8 @@ COLLISION_AVOIDANCE=""
 SCENARIO=""
 DURATION=""
 SAMPLE_HZ=""
+RECORD_VIDEO=""
+VIDEO_FPS=""
 RUN_NAME=""
 
 while [ "$#" -gt 0 ]; do
@@ -120,12 +127,24 @@ while [ "$#" -gt 0 ]; do
             SAMPLE_HZ="$2"
             shift 2
             ;;
+        --record-video)
+            RECORD_VIDEO="true"
+            shift
+            ;;
+        --no-record-video)
+            RECORD_VIDEO="false"
+            shift
+            ;;
+        --video-fps)
+            VIDEO_FPS="$2"
+            shift 2
+            ;;
         --run-name)
             RUN_NAME="$2"
             shift 2
             ;;
         -h|--help)
-            sed -n '2,46p' "$0"
+            sed -n '2,51p' "$0"
             exit 0
             ;;
         *)
@@ -174,6 +193,8 @@ LAUNCH_ARGS+=("log_dir:=${CONTAINER_RUN_DIR}")
 [ -n "${COLLISION_AVOIDANCE}" ] && LAUNCH_ARGS+=("collision_avoidance:=${COLLISION_AVOIDANCE}")
 [ -n "${DURATION}"          ] && LAUNCH_ARGS+=("duration_sec:=${DURATION}")
 [ -n "${SAMPLE_HZ}"         ] && LAUNCH_ARGS+=("sample_hz:=${SAMPLE_HZ}")
+[ -n "${RECORD_VIDEO}"      ] && LAUNCH_ARGS+=("record_video:=${RECORD_VIDEO}")
+[ -n "${VIDEO_FPS}"         ] && LAUNCH_ARGS+=("video_fps:=${VIDEO_FPS}")
 
 CONTAINER_NAME="belief_and_reward"
 

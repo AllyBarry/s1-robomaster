@@ -2,9 +2,10 @@ import math
 import numpy as np
 import rclpy
 from rclpy.node import Node
+from rclpy.qos import QoSProfile, QoSDurabilityPolicy, QoSReliabilityPolicy
 from apriltag_msgs.msg import AprilTagDetectionArray
 from geometry_msgs.msg import PoseStamped, PoseArray, Pose, Point, Quaternion, TransformStamped
-from std_msgs.msg import Header
+from std_msgs.msg import Header, Float32MultiArray
 from tf2_ros import StaticTransformBroadcaster, TransformBroadcaster
 import cv2
 
@@ -43,6 +44,17 @@ class FieldLocalizer(Node):
 
         self.pub_poses = self.create_publisher(PoseArray, "/field/robot_poses", 10)
         self.robot_pose_pubs = {}
+
+        # Latched so late-joining subscribers (e.g. video_recorder spawned
+        # after the corner tags have already been located) still receive
+        # the current inverse homography. Keeps the pixel-frame overlay
+        # logic out of this node — consumers just map field -> pixel.
+        latched_qos = QoSProfile(depth=1)
+        latched_qos.durability = QoSDurabilityPolicy.TRANSIENT_LOCAL
+        latched_qos.reliability = QoSReliabilityPolicy.RELIABLE
+        self.pub_homography_inv = self.create_publisher(
+            Float32MultiArray, "/field/homography_inv", latched_qos
+        )
 
         # Dynamic TF broadcaster for robot poses
         self.tf_broadcaster = TransformBroadcaster(self)
@@ -157,6 +169,17 @@ class FieldLocalizer(Node):
             dst = np.array(dst_pts, dtype=np.float32)
             self.homography, _ = cv2.findHomography(src, dst)
             self.get_logger().debug("Homography updated")
+
+            if self.homography is not None:
+                try:
+                    h_inv = np.linalg.inv(self.homography).astype(np.float32)
+                    msg = Float32MultiArray()
+                    msg.data = h_inv.flatten().tolist()
+                    self.pub_homography_inv.publish(msg)
+                except np.linalg.LinAlgError:
+                    self.get_logger().warning(
+                        "Homography non-invertible — skipping H^-1 publish"
+                    )
 
 
 def main(args=None):

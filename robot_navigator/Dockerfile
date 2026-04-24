@@ -5,10 +5,12 @@ ENV DEBIAN_FRONTEND=noninteractive
 
 RUN apt-get update && apt-get install -y \
     ros-humble-rmw-cyclonedds-cpp \
+    ros-humble-cv-bridge \
     python3-colcon-common-extensions \
     python3-numpy \
     python3-pandas \
     python3-matplotlib \
+    python3-opencv \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /ros_ws
