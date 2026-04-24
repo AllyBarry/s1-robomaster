@@ -549,6 +549,20 @@ class BeliefNode(Node):
             if math.hypot(tx - self.pos[0], ty - self.pos[1]) > self.waypoint_tol:
                 need_replan = False
 
+        # Force replan if the committed waypoint cell has become forbidden
+        # by a peer hazard. Without this, two robots that independently
+        # argmax'd onto the same cell on tick 0 would drive there together
+        # (priority mask would only fire at their next legitimate replan,
+        # which is too late).
+        if not need_replan and self.waypoint_cell is not None:
+            forbidden_check = self._peer_mask_grid()
+            if forbidden_check is not None and forbidden_check[self.waypoint_cell]:
+                need_replan = True
+                self.get_logger().info(
+                    "Current waypoint now forbidden by peer hazard — replanning.",
+                    throttle_duration_sec=2.0,
+                )
+
         if need_replan:
             dx_mu, dy_mu = self.model.gradient_grids()
             dx_sig, dy_sig = self.model.sigma_grids()
