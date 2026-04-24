@@ -47,8 +47,13 @@ belief_node:
     repulsion_weight: 3.0
     repulsion_radius: 0.25
     peer_pose_timeout: 1.0
+    # Hard action mask: destination cells within this radius (m) of any
+    # fresh peer are removed from the UCB candidate set. Takes precedence
+    # over the Gaussian penalty when set. 0 = disabled (penalty only).
+    peer_mask_radius: 0.2
     # Planner-layer (UCB) repulsion is OFF by default. Flip to true here
     # or toggle live by publishing Bool on /collision_avoidance_enabled.
+    # Controls BOTH the Gaussian penalty and the hard mask.
     repulsion_enabled: false
     # Edge-margin penalty: keeps UCB waypoints away from the grid
     # boundary. Linear falloff — cells `edge_margin_cells` or more from
