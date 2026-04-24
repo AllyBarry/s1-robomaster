@@ -310,6 +310,80 @@ With Fixed Frame set to `field`:
 - **Pose** on `/robot_{id}/estimated_pose` — the navigator's fused estimate (useful for debugging latency compensation)
 - **MarkerArray** on `/field/markers` — field boundary from apriltag_detector
 
+## Collision avoidance
+
+Three layers, stacked inside-out around each peer. All three are OFF by
+default — flip them on with `--collision` on the run scripts, or live via
+`ros2 topic pub --once /collision_avoidance_enabled std_msgs/Bool '{data: true}'`.
+
+```
+peer
+ │
+ ├── 0.30 m  repulsion_radius    soft Gaussian bias on UCB scores   ┐ belief node
+ ├── 0.30 m  peer_mask_radius    hard-forbid waypoint cells         ┘ (at replan, 5 Hz)
+ └── 0.40 m  avoidance_radius    deflect cmd_vel away               ← navigator (20 Hz)
+```
+
+**Planner layers (belief)** act when UCB picks the next waypoint cell:
+- **Hard mask** — any candidate cell within `peer_mask_radius` of a peer (or
+  a lower-ID peer's published waypoint) is removed from the UCB candidate
+  set. Strong gradients can't override it.
+- **Soft penalty** — a Gaussian bump of magnitude `repulsion_weight` centred
+  on each hazard is subtracted from the remaining candidates' scores.
+  Shapes the *preference* between legal cells.
+
+**Reactive layer (navigator)** acts at every control tick:
+- If a peer is within `avoidance_radius` of the robot, a linear-falloff
+  push vector is added to `cmd_vel`. Outer safety net — catches cases the
+  planner's 5 Hz replan couldn't react to in time.
+
+### Waypoint conflict resolution (priority rule)
+
+Two beliefs can independently argmax onto the same cell. To prevent that,
+each belief subscribes to peer waypoints — but only from peers with
+**lower robot_id**. The mask treats lower-ID peers' waypoints as hazards;
+higher-ID claims are ignored.
+
+Outcome: when robots 0 and 1 both pick cell X at the same tick, robot 0
+keeps X and robot 1 sees the conflict next tick and picks a different
+cell. Deterministic convergence in two ticks, no oscillation.
+
+### Running with / without collision
+
+```bash
+# Full stack with collision avoidance ON
+./run_belief_and_reward.sh --collision --robots 0,1,2 \
+    --formation line --spacing 0.4 --with-waypoints
+./run_navigator.sh 0 1 2
+ros2 topic pub --once /collision_avoidance_enabled std_msgs/Bool '{data: true}'
+
+# Same stack, collision OFF (default)
+./run_belief_and_reward.sh --no-collision --robots 0,1,2 \
+    --formation line --spacing 0.4 --with-waypoints
+./run_navigator.sh 0 1 2
+```
+
+Flip between modes mid-session without restarting:
+```bash
+ros2 topic pub --once /collision_avoidance_enabled std_msgs/Bool '{data: false}'
+```
+
+Both belief and navigator subscribe to that topic, so one message flips
+both layers together.
+
+### Tuning the radii
+
+Rule of thumb: `repulsion_radius ≤ peer_mask_radius < avoidance_radius`.
+The reactive layer must be the widest — if the mask is wider than
+reactive, reactive never fires and you lose the safety net.
+
+| Symptom | Likely layer | Knob |
+|---|---|---|
+| Waypoints land adjacent to a peer | mask too tight | `peer_mask_radius` up (0.3 → 0.4) |
+| Robots pass through each other at speed | reactive too tight or gain too low | `avoidance_radius` up, or `avoidance_gain` up |
+| Robots orbit the formation instead of converging | mask too wide | `peer_mask_radius` down |
+| Two robots pick the same cell | priority not plumbed | check each `belief_{id}` subscribed to lower-ID `/robot_M/waypoint` |
+
 ## Dead reckoning notes
 
 Each integration step picks the best available velocity source and steps
