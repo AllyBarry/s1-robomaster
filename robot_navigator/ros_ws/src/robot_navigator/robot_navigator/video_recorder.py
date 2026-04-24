@@ -18,6 +18,7 @@ import atexit
 import collections
 import pathlib
 import signal
+import subprocess
 import sys
 import threading
 
@@ -42,15 +43,12 @@ _PALETTE_BGR = [
     (180, 100, 220),  # purple
 ]
 
-# Ordered codec fallback: avc1/mp4v into .mp4, then MJPG into .avi as a
-# last resort. Jetson's apt opencv is built against ffmpeg, but the mp4v
-# muxer in some builds silently produces files that can't be reopened —
-# probing here catches that at startup instead of at end-of-run.
-_CODEC_CHAIN = [
-    ("avc1", ".mp4"),
-    ("mp4v", ".mp4"),
-    ("MJPG", ".avi"),
-]
+# Jetson's apt opencv often routes cv2.VideoWriter through GStreamer with
+# missing encoder plugins — it "opens" successfully but writes malformed
+# files. Piping raw BGR frames to an ffmpeg subprocess bypasses opencv's
+# encoder lookup entirely; as long as the binary is in PATH (installed
+# via the Dockerfile) the output is guaranteed to be a valid H.264 mp4.
+_FFMPEG_BIN = "ffmpeg"
 
 
 class VideoRecorderNode(Node):
@@ -88,7 +86,7 @@ class VideoRecorderNode(Node):
         self.video_path: pathlib.Path | None = None
 
         self.bridge = CvBridge()
-        self.writer: cv2.VideoWriter | None = None
+        self.writer: subprocess.Popen | None = None
         self.frame_size: tuple[int, int] | None = None
         # M maps source pixel -> rectified output pixel (field-aligned).
         # Updated whenever field_localizer republishes the homography.
@@ -223,33 +221,60 @@ class VideoRecorderNode(Node):
                 return
 
         self._draw_field_overlay(warped, trails, targets)
-        self.writer.write(warped)
+        try:
+            self.writer.stdin.write(warped.tobytes())
+        except (BrokenPipeError, ValueError):
+            # ffmpeg died — surface stderr once so the failure isn't silent.
+            stderr = b""
+            try:
+                stderr = self.writer.stderr.read() or b""
+            except Exception:
+                pass
+            self.get_logger().error(
+                f"ffmpeg pipe closed unexpectedly — disabling recording. "
+                f"stderr: {stderr.decode(errors='replace')[:500]}"
+            )
+            self.writer = None
+            return
         self._frames_written += 1
 
     def _open_writer(self) -> bool:
-        for fourcc_str, ext in _CODEC_CHAIN:
-            path = self.video_stem.with_suffix(ext)
-            fourcc = cv2.VideoWriter_fourcc(*fourcc_str)
-            writer = cv2.VideoWriter(
-                str(path), fourcc, self.fps, (self.out_w, self.out_h)
+        path = self.video_stem.with_suffix(".mp4")
+        cmd = [
+            _FFMPEG_BIN, "-y", "-loglevel", "error",
+            "-f", "rawvideo", "-pix_fmt", "bgr24",
+            "-s", f"{self.out_w}x{self.out_h}",
+            "-r", f"{self.fps}",
+            "-i", "-",
+            "-an",
+            "-c:v", "libx264", "-preset", "ultrafast", "-tune", "zerolatency",
+            "-pix_fmt", "yuv420p",
+            "-movflags", "+faststart",
+            str(path),
+        ]
+        try:
+            proc = subprocess.Popen(
+                cmd,
+                stdin=subprocess.PIPE,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.PIPE,
+                bufsize=0,
             )
-            if writer.isOpened():
-                self.writer = writer
-                self.frame_size = (self.out_w, self.out_h)
-                self.video_path = path
-                self.get_logger().info(
-                    f"video_recorder: writing {self.out_w}x{self.out_h} "
-                    f"@ {self.fps} fps [{fourcc_str}] -> {path}"
-                )
-                return True
-            writer.release()
-            self.get_logger().warning(
-                f"codec {fourcc_str} ({ext}) unavailable — trying next"
+        except FileNotFoundError:
+            self.get_logger().error(
+                f"'{_FFMPEG_BIN}' not found on PATH — rebuild the image "
+                "(Dockerfile installs ffmpeg)"
             )
-        self.get_logger().error(
-            "no working VideoWriter codec — disabling recording"
+            return False
+
+        self.writer = proc
+        self.frame_size = (self.out_w, self.out_h)
+        self.video_path = path
+        self.get_logger().info(
+            f"video_recorder: piping {self.out_w}x{self.out_h} @ {self.fps} fps "
+            f"to ffmpeg libx264 -> {path}"
         )
-        return False
+        return True
 
     def _field_to_pixel(self, pts_xy: np.ndarray) -> np.ndarray:
         if pts_xy.size == 0:
@@ -310,10 +335,45 @@ class VideoRecorderNode(Node):
         )
 
     def close_writer(self):
-        if self.writer is not None:
-            self.writer.release()
-            self.get_logger().info(f"video_recorder: closed {self.video_path}")
-            self.writer = None
+        # Closing stdin tells ffmpeg EOF; wait() lets it finalize the mp4
+        # moov atom before we return. Idempotent — safe to call from both
+        # the atexit hook and destroy_node().
+        if self.writer is None:
+            return
+        proc = self.writer
+        self.writer = None
+        try:
+            if proc.stdin and not proc.stdin.closed:
+                proc.stdin.close()
+        except Exception:
+            pass
+        try:
+            proc.wait(timeout=10)
+        except subprocess.TimeoutExpired:
+            self.get_logger().warning(
+                "ffmpeg did not exit within 10s — killing (file may be truncated)"
+            )
+            proc.kill()
+            try:
+                proc.wait(timeout=2)
+            except subprocess.TimeoutExpired:
+                pass
+        rc = proc.returncode
+        if rc == 0:
+            self.get_logger().info(
+                f"video_recorder: closed {self.video_path} "
+                f"({self._frames_written} frames)"
+            )
+        else:
+            stderr = b""
+            try:
+                stderr = proc.stderr.read() or b""
+            except Exception:
+                pass
+            self.get_logger().error(
+                f"ffmpeg exited rc={rc} — {self.video_path} may be incomplete. "
+                f"stderr: {stderr.decode(errors='replace')[:500]}"
+            )
 
     def destroy_node(self):
         self.close_writer()

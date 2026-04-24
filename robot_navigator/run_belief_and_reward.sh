@@ -215,8 +215,6 @@ echo ""
 echo "Monitor reward:   ros2 topic echo /global_reward"
 echo "Monitor waypoint: ros2 topic echo /robot_0/waypoint"
 
-# Auto-plot only on bounded runs — for DURATION=0 (or unset) we don't know
-# when the user will stop, so we leave the plot invocation to them.
 # Plot via a one-off container: reuses the robot_navigator image (which
 # has a matching numpy/matplotlib/pandas from apt), so we don't depend on
 # the Jetson host's Python stack. --user keeps PNG ownership on the host
@@ -230,17 +228,37 @@ plot_in_container() {
         /ros_ws/scripts/plot_experiment.py "${CONTAINER_RUN_DIR}"
 }
 
+PLOT_FALLBACK_HINT="plotter container failed — rerun manually: docker compose run --rm --user \$(id -u):\$(id -g) -e HOME=/tmp --entrypoint python3 robot_navigator /ros_ws/scripts/plot_experiment.py ${CONTAINER_RUN_DIR}"
+
+# Ctrl-C path: tell the container to shut down gracefully so video_recorder's
+# atexit/SIGTERM handlers run (finalize the mp4 moov atom) before the
+# process dies, then plot the trajectory overlays. `docker stop -t 15`
+# gives ros2 launch and its children 15 s to unwind — plenty since the
+# recorder's release is sub-second, but generous enough that the grace
+# window won't clip a slow belief-node shutdown.
+cleanup_on_interrupt() {
+    trap - INT TERM                        # re-interrupt = hard abort
+    echo ""
+    echo "Interrupted — stopping ${CONTAINER_NAME} so the video finalizes..."
+    docker stop -t 15 "${CONTAINER_NAME}" >/dev/null 2>&1 || true
+    echo "Generating plots in ${HOST_RUN_DIR}/plots/..."
+    plot_in_container || echo "${PLOT_FALLBACK_HINT}"
+    exit 130
+}
+trap cleanup_on_interrupt INT TERM
+
+# Stay attached so Ctrl-C triggers the trap above, whether this is a
+# --duration run (container self-exits when trajectory_logger's on_exit
+# Shutdown() cascades) or unbounded (docker wait blocks until the user
+# interrupts us or an external `docker stop`).
+echo ""
 if [ -n "${DURATION}" ] && awk "BEGIN{exit !(${DURATION}>0)}" 2>/dev/null; then
-    echo ""
-    echo "Waiting for ${CONTAINER_NAME} to exit (duration=${DURATION}s)..."
-    docker wait "${CONTAINER_NAME}" >/dev/null || true
-    echo "${CONTAINER_NAME} exited — generating plots in ${HOST_RUN_DIR}/plots/"
-    plot_in_container \
-        || echo "plotter container failed — rerun manually: docker compose run --rm --user \$(id -u):\$(id -g) -e HOME=/tmp --entrypoint python3 robot_navigator /ros_ws/scripts/plot_experiment.py ${CONTAINER_RUN_DIR}"
+    echo "Waiting for ${CONTAINER_NAME} to exit (duration=${DURATION}s, Ctrl-C to stop early)..."
 else
-    echo ""
-    echo "Plot after the run with:"
-    echo "  docker compose run --rm --user \$(id -u):\$(id -g) -e HOME=/tmp \\"
-    echo "    --entrypoint python3 robot_navigator \\"
-    echo "    /ros_ws/scripts/plot_experiment.py ${CONTAINER_RUN_DIR}"
+    echo "Run active — press Ctrl-C to stop, finalize the video, and plot."
 fi
+docker wait "${CONTAINER_NAME}" >/dev/null || true
+trap - INT TERM
+
+echo "${CONTAINER_NAME} exited — generating plots in ${HOST_RUN_DIR}/plots/"
+plot_in_container || echo "${PLOT_FALLBACK_HINT}"

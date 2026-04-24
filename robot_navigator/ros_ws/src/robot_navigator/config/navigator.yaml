@@ -20,7 +20,7 @@ robot_navigator:
     # peer_robot_ids:=1,2) — omitted here because empty YAML lists get
     # misinferred as BYTE_ARRAY at param-load time. When a peer enters
     # avoidance_radius, cmd_vel is deflected away (linear falloff to 0).
-    avoidance_radius: 0.25
+    avoidance_radius: 0.4
     avoidance_gain: 0.3
     peer_pose_timeout: 1.0
     # Reactive peer repulsion is OFF by default. Flip to true here or
