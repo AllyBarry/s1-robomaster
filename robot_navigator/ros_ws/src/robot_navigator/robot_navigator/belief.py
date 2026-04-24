@@ -148,30 +148,36 @@ INVALID = -1e9
 
 
 def ucb_select(dx_mu, dx_sig, dy_mu, dy_sig, row, col, alpha=1.0, beta=1.0,
-               penalty=None):
+               penalty=None, forbidden=None):
     """
-    4-connected UCB action selection. `penalty`, if given, is an HxW array of
-    non-negative costs subtracted from each action's score at the *destination*
-    cell — used to implement peer repulsion at the planner layer.
+    4-connected UCB action selection.
+
+    `penalty`, if given, is an HxW array of non-negative costs subtracted
+    from each action's score at the *destination* cell — the soft layer.
+
+    `forbidden`, if given, is an HxW bool array: destinations flagged True
+    are hard-rejected (score stays INVALID, same treatment as off-grid).
+    Use this for peer-mask collision avoidance that must never be
+    overridden by a strong gradient.
     """
     H, W = dx_mu.shape
     ucb = np.full(4, INVALID)
-    if row > 0:
+    if row > 0 and (forbidden is None or not forbidden[row - 1, col]):
         s = alpha * (-dy_mu[row - 1, col]) + beta * dy_sig[row - 1, col]
         if penalty is not None:
             s -= penalty[row - 1, col]
         ucb[0] = s
-    if row < H - 1:
+    if row < H - 1 and (forbidden is None or not forbidden[row + 1, col]):
         s = alpha * dy_mu[row, col] + beta * dy_sig[row, col]
         if penalty is not None:
             s -= penalty[row + 1, col]
         ucb[1] = s
-    if col > 0:
+    if col > 0 and (forbidden is None or not forbidden[row, col - 1]):
         s = alpha * (-dx_mu[row, col - 1]) + beta * dx_sig[row, col - 1]
         if penalty is not None:
             s -= penalty[row, col - 1]
         ucb[2] = s
-    if col < W - 1:
+    if col < W - 1 and (forbidden is None or not forbidden[row, col + 1]):
         s = alpha * dx_mu[row, col] + beta * dx_sig[row, col]
         if penalty is not None:
             s -= penalty[row, col + 1]
@@ -238,6 +244,10 @@ class BeliefNode(Node):
         self.declare_parameter("repulsion_weight", 5.0)
         self.declare_parameter("repulsion_radius", 0.4)
         self.declare_parameter("peer_pose_timeout", 1.0)
+        # Hard action mask: forbid UCB candidates whose destination lies
+        # within this radius (m) of any peer. 0 disables the mask, leaving
+        # only the soft Gaussian penalty active.
+        self.declare_parameter("peer_mask_radius", 0.0)
         # Runtime kill-switch for the planner-layer repulsion penalty.
         self.declare_parameter("repulsion_enabled", True)
         self.declare_parameter("avoidance_toggle_topic", "/collision_avoidance_enabled")
@@ -267,6 +277,7 @@ class BeliefNode(Node):
         self.rep_weight = float(self.get_parameter("repulsion_weight").value)
         self.rep_radius = float(self.get_parameter("repulsion_radius").value)
         self.peer_timeout = float(self.get_parameter("peer_pose_timeout").value)
+        self.mask_radius = float(self.get_parameter("peer_mask_radius").value)
         self.rep_enabled = bool(self.get_parameter("repulsion_enabled").value)
         avoid_toggle_topic = str(self.get_parameter("avoidance_toggle_topic").value)
         self.edge_margin_cells = int(self.get_parameter("edge_margin_cells").value)
@@ -387,6 +398,25 @@ class BeliefNode(Node):
             penalty += self.rep_weight * np.exp(-d2 / denom)
         return penalty
 
+    def _peer_mask_grid(self) -> np.ndarray | None:
+        """Bool HxW grid — True at cells within mask_radius of any fresh peer.
+
+        Destinations flagged here are hard-rejected by ucb_select, giving
+        a definitive "never enter" guarantee regardless of gradient or σ.
+        Returns None when the mask is disabled or no cells are flagged.
+        """
+        if not self.rep_enabled or self.mask_radius <= 0.0:
+            return None
+        peers = self._fresh_peer_positions()
+        if not peers:
+            return None
+        r2 = self.mask_radius * self.mask_radius
+        mask = np.zeros((self.H, self.W), dtype=bool)
+        for p in peers:
+            d2 = (self._grid_X - p[0]) ** 2 + (self._grid_Y - p[1]) ** 2
+            mask |= d2 <= r2
+        return mask if mask.any() else None
+
     def _compute_edge_penalty(self) -> np.ndarray | None:
         if self.edge_margin_cells <= 0 or self.edge_margin_weight <= 0.0:
             return None
@@ -491,14 +521,26 @@ class BeliefNode(Node):
             dx_mu, dy_mu = self.model.gradient_grids()
             dx_sig, dy_sig = self.model.sigma_grids()
             penalty = self._combined_penalty()
-            action, _ = ucb_select(
+            forbidden = self._peer_mask_grid()
+            action, ucb_scores = ucb_select(
                 dx_mu, dx_sig, dy_mu, dy_sig, row, col,
                 alpha=self.ucb_alpha, beta=self.ucb_beta,
-                penalty=penalty,
+                penalty=penalty, forbidden=forbidden,
             )
-            new_row = max(0, min(self.H - 1, row + ACTION_DROW[action]))
-            new_col = max(0, min(self.W - 1, col + ACTION_DCOL[action]))
-            self.waypoint_cell = (new_row, new_col)
+            if float(np.max(ucb_scores)) <= INVALID:
+                # All 4 neighbours are off-grid or mask-forbidden. Holding
+                # the current cell preserves the mask's "never enter a
+                # forbidden cell" guarantee — the navigator's reactive
+                # layer handles any genuine close approach from here.
+                self.get_logger().warn(
+                    "All neighbours forbidden; holding position.",
+                    throttle_duration_sec=2.0,
+                )
+                self.waypoint_cell = (row, col)
+            else:
+                new_row = max(0, min(self.H - 1, row + ACTION_DROW[action]))
+                new_col = max(0, min(self.W - 1, col + ACTION_DCOL[action]))
+                self.waypoint_cell = (new_row, new_col)
             self.get_logger().info(
                 f"New waypoint cell ({new_row}, {new_col}) -> "
                 f"{grid_to_world(new_row, new_col, self.ox, self.oy, self.res)}"
