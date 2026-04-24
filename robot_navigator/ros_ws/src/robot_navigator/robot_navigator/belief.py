@@ -207,10 +207,10 @@ class BeliefNode(Node):
 
         self.declare_parameter("robot_id", 0)
         self.declare_parameter("grid_resolution", 0.2)
-        self.declare_parameter("grid_origin_x", -1.5)
-        self.declare_parameter("grid_origin_y", -1.5)
-        self.declare_parameter("grid_width", 15)
-        self.declare_parameter("grid_height", 15)
+        self.declare_parameter("grid_origin_x", 0.0)
+        self.declare_parameter("grid_origin_y", 0.0)
+        self.declare_parameter("grid_width", 12)
+        self.declare_parameter("grid_height", 11)
         # Minimum displacement (m) to accept a sample, on top of the
         # cell-change requirement. Pure pose-noise jitter should stay below
         # this. Keep it well under grid_resolution.
