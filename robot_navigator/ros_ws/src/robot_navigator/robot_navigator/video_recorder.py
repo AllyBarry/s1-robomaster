@@ -13,8 +13,11 @@ carries its own video artifact alongside the CSV, JSON sidecar, and
 `plots/` directory.
 """
 
+import atexit
 import collections
 import pathlib
+import signal
+import sys
 import threading
 
 import cv2
@@ -36,6 +39,16 @@ _PALETTE_BGR = [
     (60, 76, 231),    # red
     (232, 189, 56),   # cyan
     (180, 100, 220),  # purple
+]
+
+# Ordered codec fallback: avc1/mp4v into .mp4, then MJPG into .avi as a
+# last resort. Jetson's apt opencv is built against ffmpeg, but the mp4v
+# muxer in some builds silently produces files that can't be reopened —
+# probing here catches that at startup instead of at end-of-run.
+_CODEC_CHAIN = [
+    ("avc1", ".mp4"),
+    ("mp4v", ".mp4"),
+    ("MJPG", ".avi"),
 ]
 
 
@@ -62,10 +75,12 @@ class VideoRecorderNode(Node):
         markers_topic = str(self.get_parameter("markers_topic").value)
 
         self.log_dir.mkdir(parents=True, exist_ok=True)
-        self.video_path = self.log_dir / f"{self.scenario}.mp4"
+        self.video_stem = self.log_dir / self.scenario
+        self.video_path: pathlib.Path | None = None
 
         self.bridge = CvBridge()
         self.writer: cv2.VideoWriter | None = None
+        self.frame_size: tuple[int, int] | None = None
         self.h_inv: np.ndarray | None = None
         self.targets: list[tuple[float, float]] | None = None
 
@@ -101,7 +116,7 @@ class VideoRecorderNode(Node):
             )
 
         self.get_logger().info(
-            f"video_recorder: image='{image_topic}', output={self.video_path}, "
+            f"video_recorder: image='{image_topic}', output_stem={self.video_stem}, "
             f"fps={self.fps}, robots={self.robot_ids}"
         )
 
@@ -139,21 +154,15 @@ class VideoRecorderNode(Node):
             return
 
         if self.writer is None:
-            h, w = frame.shape[:2]
-            fourcc = cv2.VideoWriter_fourcc(*"mp4v")
-            self.writer = cv2.VideoWriter(
-                str(self.video_path), fourcc, self.fps, (w, h)
-            )
-            if not self.writer.isOpened():
-                self.get_logger().error(
-                    f"VideoWriter failed to open {self.video_path} — disabling"
-                )
-                self.writer = None
+            if not self._open_writer(frame.shape[:2]):
                 return
-            self.get_logger().info(
-                f"video_recorder: writing {w}x{h} @ {self.fps} fps "
-                f"-> {self.video_path}"
-            )
+        else:
+            # VideoWriter quietly corrupts output if frame size changes
+            # after open — skip mismatched frames instead of letting it
+            # scribble garbage into the container.
+            h, w = frame.shape[:2]
+            if (w, h) != self.frame_size:
+                return
 
         with self._lock:
             h_inv = None if self.h_inv is None else self.h_inv.copy()
@@ -164,6 +173,30 @@ class VideoRecorderNode(Node):
             self._draw_overlay(frame, h_inv, trails, targets)
 
         self.writer.write(frame)
+
+    def _open_writer(self, shape_hw) -> bool:
+        h, w = shape_hw
+        for fourcc_str, ext in _CODEC_CHAIN:
+            path = self.video_stem.with_suffix(ext)
+            fourcc = cv2.VideoWriter_fourcc(*fourcc_str)
+            writer = cv2.VideoWriter(str(path), fourcc, self.fps, (w, h))
+            if writer.isOpened():
+                self.writer = writer
+                self.frame_size = (w, h)
+                self.video_path = path
+                self.get_logger().info(
+                    f"video_recorder: writing {w}x{h} @ {self.fps} fps "
+                    f"[{fourcc_str}] -> {path}"
+                )
+                return True
+            writer.release()
+            self.get_logger().warning(
+                f"codec {fourcc_str} ({ext}) unavailable — trying next"
+            )
+        self.get_logger().error(
+            "no working VideoWriter codec — disabling recording"
+        )
+        return False
 
     def _field_to_pixel(self, pts_xy: np.ndarray, h_inv: np.ndarray) -> np.ndarray:
         if pts_xy.size == 0:
@@ -203,24 +236,40 @@ class VideoRecorderNode(Node):
                         cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 2,
                         lineType=cv2.LINE_AA)
 
-    def destroy_node(self):
+    def close_writer(self):
         if self.writer is not None:
             self.writer.release()
             self.get_logger().info(f"video_recorder: closed {self.video_path}")
             self.writer = None
+
+    def destroy_node(self):
+        self.close_writer()
         super().destroy_node()
 
 
 def main(args=None):
     rclpy.init(args=args)
     node = VideoRecorderNode()
+
+    # Two-layer safety net so the mp4 moov atom is always finalized:
+    # (1) atexit runs on any Python-level exit (SystemExit, normal return,
+    #     uncaught exception); (2) the SIGTERM handler converts docker's
+    #     graceful-stop signal into SystemExit so atexit actually fires
+    #     — rclpy's default signal handling covers SIGINT but not SIGTERM.
+    atexit.register(node.close_writer)
+    signal.signal(signal.SIGTERM, lambda *_: sys.exit(0))
+
     try:
         rclpy.spin(node)
     except KeyboardInterrupt:
         pass
     finally:
-        node.destroy_node()
-        rclpy.shutdown()
+        node.close_writer()
+        try:
+            node.destroy_node()
+        finally:
+            if rclpy.ok():
+                rclpy.shutdown()
 
 
 if __name__ == "__main__":
