@@ -15,6 +15,9 @@ services:
       # Logs written by trajectory_logger (scenario.csv + scenario.json)
       # surface here on the host for post-hoc plotting.
       - ./experiment_logs:/ros_ws/experiment_logs
+      # Mount host scripts read-only so plot_experiment.py can be invoked
+      # inside the container (avoids the Jetson host's numpy ABI issues).
+      - ./scripts:/ros_ws/scripts:ro
     environment:
       - ROS_DOMAIN_ID=0
       - RMW_IMPLEMENTATION=rmw_cyclonedds_cpp

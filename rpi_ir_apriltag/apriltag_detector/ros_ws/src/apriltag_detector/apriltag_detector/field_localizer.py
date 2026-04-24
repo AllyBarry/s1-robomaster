@@ -16,7 +16,7 @@ class FieldLocalizer(Node):
         self.declare_parameter("corner_tag_ids", [0, 1, 2, 3])
         self.declare_parameter(
             "corner_tag_positions",
-            [0.0, 0.0, 3.0, 0.0, 3.0, 2.0, 0.0, 2.0],
+            [0.0, 0.0, 3.0, 0.0, 3.0, 3.0, 0.0, 3.0],
         )
 
         corner_ids = self.get_parameter("corner_tag_ids").value

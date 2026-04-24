@@ -3,8 +3,8 @@ global_feedback:
     robot_ids: [0, 1, 2]
     # One of: line | triangle | circle | custom
     formation: "triangle"
-    formation_center_x: 1.0
-    formation_center_y: 1.0
+    formation_center_x: 1.5
+    formation_center_y: 1.5
     # Line: neighbour spacing. Triangle/circle: radius from centre.
     formation_spacing: 0.5
     formation_yaw: 0.0
