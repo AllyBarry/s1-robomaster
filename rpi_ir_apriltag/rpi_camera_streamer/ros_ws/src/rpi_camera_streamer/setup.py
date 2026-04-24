@@ -17,6 +17,7 @@ setup(
     entry_points={
         "console_scripts": [
             "camera_info_publisher = rpi_camera_streamer.camera_info_publisher:main",
+            "webcam_watchdog = rpi_camera_streamer.webcam_watchdog:main",
         ],
     },
     install_requires=["setuptools", "pyyaml"],

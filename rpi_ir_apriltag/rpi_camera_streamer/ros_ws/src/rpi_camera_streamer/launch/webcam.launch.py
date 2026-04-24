@@ -27,15 +27,28 @@ def launch_setup(context):
         output="screen",
     )
 
-    return [webcam_node]
+    watchdog_node = Node(
+        package="rpi_camera_streamer",
+        executable="webcam_watchdog",
+        name="webcam_watchdog",
+        parameters=[{
+            "image_topic": "/webcam/image_raw",
+            "startup_timeout_sec": 15.0,
+            "stale_timeout_sec": 5.0,
+            "check_period_sec": 1.0,
+        }],
+        output="screen",
+    )
+
+    return [webcam_node, watchdog_node]
 
 
 def generate_launch_description():
     return LaunchDescription([
         DeclareLaunchArgument(
             "video_device",
-            default_value="/dev/video1",
-            description="V4L2 video device path",
+            default_value="/dev/video20",
+            description="V4L2 video device path (defaults to camera_broker loopback; pass /dev/video1 to bypass)",
         ),
         DeclareLaunchArgument(
             "image_width",
