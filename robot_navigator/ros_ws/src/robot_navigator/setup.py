@@ -21,6 +21,7 @@ setup(
             "global_feedback = robot_navigator.global_feedback:main",
             "belief = robot_navigator.belief:main",
             "trajectory_logger = robot_navigator.trajectory_logger:main",
+            "go_to_starts = robot_navigator.go_to_starts:main",
         ],
     },
     install_requires=["setuptools"],
