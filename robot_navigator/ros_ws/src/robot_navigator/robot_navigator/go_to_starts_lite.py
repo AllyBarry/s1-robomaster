@@ -14,36 +14,43 @@ from geometry_msgs.msg import PoseStamped
 from rclpy.node import Node
 
 
-FIELD = 3.0
-CENTER = FIELD / 2.0
-# Stay off the corner AprilTags — parking on them blocks the homography.
-CORNER_INSET = 0.25
 TOPIC_RE = re.compile(r"^/field/robot_(\d+)/pose$")
 
+# Each shape is a fixed set of (x, y) targets in the 3x3m field. Hardcoded
+# so a repeated test always places robots in the same spots. Corners are
+# inset 0.4m to keep robots off the corner AprilTags (which the homography
+# needs to see).
 SHAPES = {
-    "corners": lambda s: [
-        (CORNER_INSET, CORNER_INSET),
-        (FIELD - CORNER_INSET, CORNER_INSET),
-        (FIELD - CORNER_INSET, FIELD - CORNER_INSET),
-        (CORNER_INSET, FIELD - CORNER_INSET),
+    "corners": [
+        (0.4, 0.4),
+        (2.6, 0.4),
+        (2.6, 2.6),
+        (0.4, 2.6),
     ],
-    "line": lambda s: [(CENTER + (k - 1.5) * s, CENTER) for k in range(4)],
-    "triangle": lambda s: [
-        (CENTER, CENTER + s / math.sqrt(3.0)),
-        (CENTER - s / 2.0, CENTER - s / (2.0 * math.sqrt(3.0))),
-        (CENTER + s / 2.0, CENTER - s / (2.0 * math.sqrt(3.0))),
+    "line": [
+        (0.50, 1.5),
+        (1.17, 1.5),
+        (1.83, 1.5),
+        (2.50, 1.5),
     ],
-    "circle": lambda s: [
-        (CENTER + s * math.cos(2.0 * math.pi * k / 4.0),
-         CENTER + s * math.sin(2.0 * math.pi * k / 4.0)) for k in range(4)
+    "triangle": [
+        (1.5, 2.19),
+        (0.9, 1.15),
+        (2.1, 1.15),
+    ],
+    "circle": [
+        (2.5, 1.5),
+        (1.5, 2.5),
+        (0.5, 1.5),
+        (1.5, 0.5),
     ],
 }
 
 
 class GoLite(Node):
-    def __init__(self, shape, spacing, timeout, tol):
+    def __init__(self, shape, timeout, tol):
         super().__init__("go_to_starts_lite")
-        self.targets = SHAPES[shape](spacing)
+        self.targets = SHAPES[shape]
         self.timeout = timeout
         self.tol = tol
         self.pose: dict[int, tuple[float, float]] = {}
@@ -133,12 +140,11 @@ class GoLite(Node):
 def main():
     p = argparse.ArgumentParser()
     p.add_argument("--shape", required=True, choices=list(SHAPES.keys()))
-    p.add_argument("--spacing", type=float, default=1.0)
     p.add_argument("--timeout", type=float, default=30.0)
     p.add_argument("--tolerance", type=float, default=0.1)
     args, ros_args = p.parse_known_args()
     rclpy.init(args=ros_args)
-    node = GoLite(args.shape, args.spacing, args.timeout, args.tolerance)
+    node = GoLite(args.shape, args.timeout, args.tolerance)
     try:
         rclpy.spin(node)
     except KeyboardInterrupt:

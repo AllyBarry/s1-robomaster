@@ -799,10 +799,10 @@ class BeliefNode(Node):
                 new_row = max(0, min(self.H - 1, row + ACTION_DROW[action]))
                 new_col = max(0, min(self.W - 1, col + ACTION_DCOL[action]))
                 self.waypoint_cell = (new_row, new_col)
-            self.get_logger().info(
-                f"New waypoint cell ({new_row}, {new_col}) -> "
-                f"{grid_to_world(new_row, new_col, self.ox, self.oy, self.res)}"
-            )
+                self.get_logger().info(
+                    f"New waypoint cell ({new_row}, {new_col}) -> "
+                    f"{grid_to_world(new_row, new_col, self.ox, self.oy, self.res)}"
+                )
 
         wx, wy = grid_to_world(*self.waypoint_cell, self.ox, self.oy, self.res)
         msg = PointStamped()

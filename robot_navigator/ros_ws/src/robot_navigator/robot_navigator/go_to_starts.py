@@ -23,7 +23,7 @@ from std_msgs.msg import Bool
 
 FIELD_SIZE_M = 3.0
 # Stay off the corner AprilTags — parking on them blocks the homography.
-CORNER_INSET_M = 0.25
+CORNER_INSET_M = 0.4
 FIELD_TOPIC_RE = re.compile(r"^/field/robot_(\d+)/pose$")
 
 STATE_DISCOVER = "DISCOVER"
