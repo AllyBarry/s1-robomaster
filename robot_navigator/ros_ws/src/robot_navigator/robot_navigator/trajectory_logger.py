@@ -42,6 +42,13 @@ class TrajectoryLoggerNode(Node):
         self.declare_parameter("reward_topic", "/global_reward")
         self.declare_parameter("markers_topic", "/target_markers")
         self.declare_parameter("field_frame", "field")
+        # Field extent in metres — stamped into the JSON sidecar so the
+        # offline plotter can draw full-field axes regardless of where
+        # the robots actually explored.
+        self.declare_parameter("field_x_min", 0.0)
+        self.declare_parameter("field_x_max", 3.0)
+        self.declare_parameter("field_y_min", 0.0)
+        self.declare_parameter("field_y_max", 3.0)
 
         self.robot_ids = [int(v) for v in self.get_parameter("robot_ids").value]
         self.log_dir = pathlib.Path(self.get_parameter("log_dir").value)
@@ -49,6 +56,12 @@ class TrajectoryLoggerNode(Node):
         self.duration = float(self.get_parameter("duration_sec").value)
         self.sample_period = 1.0 / float(self.get_parameter("sample_hz").value)
         self.field_frame = str(self.get_parameter("field_frame").value)
+        self.field_bounds = {
+            "x_min": float(self.get_parameter("field_x_min").value),
+            "x_max": float(self.get_parameter("field_x_max").value),
+            "y_min": float(self.get_parameter("field_y_min").value),
+            "y_max": float(self.get_parameter("field_y_max").value),
+        }
 
         self.log_dir.mkdir(parents=True, exist_ok=True)
         csv_path = self.log_dir / f"{self.scenario}.csv"
@@ -129,6 +142,7 @@ class TrajectoryLoggerNode(Node):
             "robot_ids": self.robot_ids,
             "targets": [[x, y] for (x, y) in self.targets],
             "field_frame": self.field_frame,
+            "field_bounds": self.field_bounds,
         }
         self.json_path.write_text(json.dumps(payload, indent=2))
         self._sidecar_written = True

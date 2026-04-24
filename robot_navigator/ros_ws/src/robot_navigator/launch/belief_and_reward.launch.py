@@ -111,8 +111,8 @@ def generate_launch_description():
         ),
         DeclareLaunchArgument(
             "formation_center_y",
-            default_value="1.0",
-            description="Formation centre y (field is 2.0 m tall → 1.0 m = middle)",
+            default_value="1.5",
+            description="Formation centre y (field is 3.0 m tall → 1.5 m = middle)",
         ),
         DeclareLaunchArgument(
             "assignment",
