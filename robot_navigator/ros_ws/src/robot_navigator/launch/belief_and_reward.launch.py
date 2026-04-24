@@ -28,6 +28,7 @@ def _launch_setup(context, *args, **kwargs):
     sample_hz = LaunchConfiguration("sample_hz").perform(context)
     record_video = LaunchConfiguration("record_video").perform(context).lower() == "true"
     video_fps = LaunchConfiguration("video_fps").perform(context)
+    hold_enabled = LaunchConfiguration("hold_enabled").perform(context)
 
     actions = []
 
@@ -66,6 +67,7 @@ def _launch_setup(context, *args, **kwargs):
                 "robot_id": str(rid),
                 "publish_waypoints": publish_waypoints,
                 "peer_robot_ids": peers,
+                "hold_enabled": hold_enabled,
             }.items(),
         ))
 
@@ -183,6 +185,14 @@ def generate_launch_description():
             "video_fps",
             default_value="5.0",
             description="Output video frame rate (match detection_overlay's publish_rate_hz for real-time playback)",
+        ),
+        DeclareLaunchArgument(
+            "hold_enabled",
+            default_value="false",
+            description=(
+                "Enable the 1-bit hold/probe coordination channel on every belief. "
+                "OFF by default — the probe model is run via ./run_belief_and_reward_hold.sh."
+            ),
         ),
         OpaqueFunction(function=_launch_setup),
     ])

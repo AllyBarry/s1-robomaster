@@ -1,71 +1,39 @@
 #!/bin/bash
-# Bundled launch: global_feedback + one belief node per robot_id, in a
-# single container. Couples their lifecycles — restarting this container
-# re-seeds every belief posterior against fresh targets (a belief's
-# learned gradient is only valid for the current reward landscape, and
-# `forgetting=0.999` is too slow to wash out a stale posterior).
+# Probe-model variant of ./run_belief_and_reward.sh — identical bundle
+# (global_feedback + per-robot beliefs + trajectory logger + optional
+# video recorder) but with the 1-bit hold/probe coordination channel
+# enabled on every belief node. Use this to A/B against the baseline
+# UCB + repulsion run.
 #
-# The navigator is intentionally kept separate (./run_navigator.sh) so
-# robots can coast during a belief re-seed instead of being killed
-# mid-transit.
+# When a belief raises /field/robot_{id}/hold_request, every peer freezes
+# at its current cell until the holder auto-releases (hold_duration_sec).
+# Credit assignment becomes single-mover so the per-robot posterior isn't
+# polluted by overlapping peer movement.
 #
-# All knobs are named flags; anything omitted falls back to the launch
-# file default (see belief_and_reward.launch.py).
+# Baseline comparison: ./run_belief_and_reward.sh (same flags, no hold).
+# Output run folders are timestamp-prefixed so both variants live side
+# by side under ./experiment_logs/.
 #
 # Usage:
-#   ./run_belief_and_reward.sh [flags]
+#   ./run_belief_and_reward_hold.sh [flags]
 #
-# Flags:
-#   --rebuild | -r                 Rebuild image from scratch before running
-#   --robots <csv>                 Robot IDs, e.g. 0,1,2
-#   --formation <name>             line | triangle | circle | custom
-#   --spacing <float>              Line spacing or triangle/circle radius (m)
-#   --center-x <float>             Formation centre x (m)
-#   --center-y <float>             Formation centre y (m)
-#   --assignment <name>            ordered | nearest
-#   --with-waypoints               Publish UCB waypoints from belief nodes
-#   --no-waypoints                 Disable waypoint publishing (viz only)
-#   --collision                    Enable peer repulsion in the belief planner (off by default)
-#   --no-collision                 Disable peer repulsion in the belief planner (default)
-#   --scenario <name>              Episode name — CSV/JSON filename stem
-#   --duration <sec>               Auto-stop logger after N seconds (0 = run until killed)
-#   --sample-hz <float>            Logger sample rate
-#   --record-video                 Record overhead camera + trajectory overlay to {scenario}.mp4
-#   --no-record-video              Disable video recording (default)
-#   --video-fps <float>            Output mp4 frame rate (default: 5, matches detection_overlay)
-#   --run-name <name>              Override the auto-generated run folder name
-#                                  (default: {scenario}_{YYYYMMDD_HHMMSS})
-#
-# Each invocation writes to its own folder under ./experiment_logs/ — prior
-# runs are never overwritten. The folder contains:
-#   {scenario}.csv, {scenario}.json, plots/ (populated by the plotter),
-#   and {scenario}.mp4 when --record-video is set.
-# Plot offline with:
-#   python3 scripts/plot_experiment.py experiment_logs/{run_folder}/
-#
-# Examples:
-#   ./run_belief_and_reward.sh                                   # all defaults
-#   ./run_belief_and_reward.sh --scenario baseline --duration 120
-#   ./run_belief_and_reward.sh --robots 0,1,2 --formation line --spacing 0.4
-#   ./run_belief_and_reward.sh --formation triangle --center-x 1.25 --center-y 1.1
-#   ./run_belief_and_reward.sh --rebuild --robots 0,1 --with-waypoints
-#   ./run_belief_and_reward.sh --scenario run1 --duration 60 --record-video
+# Flags: identical to ./run_belief_and_reward.sh — see --help below.
 
 set -e
 
 REBUILD=0
 ROBOT_IDS=""
-FORMATION="line"
-SPACING="1"
-CENTER_X="1.5"
-CENTER_Y="1.5"
+FORMATION=""
+SPACING=""
+CENTER_X=""
+CENTER_Y=""
 ASSIGNMENT=""
 PUBLISH_WAYPOINTS=""
 COLLISION_AVOIDANCE=""
 SCENARIO=""
-DURATION="100"
+DURATION=""
 SAMPLE_HZ=""
-RECORD_VIDEO="true"
+RECORD_VIDEO=""
 VIDEO_FPS=""
 RUN_NAME=""
 
@@ -144,7 +112,7 @@ while [ "$#" -gt 0 ]; do
             shift 2
             ;;
         -h|--help)
-            sed -n '2,51p' "$0"
+            sed -n '2,24p' "$0"
             exit 0
             ;;
         *)
@@ -161,15 +129,10 @@ if [ "${REBUILD}" = "1" ]; then
 else
     docker compose build
 fi
-# If build fails on Jetson with an iptables `raw` table error, run:
-#   DOCKER_BUILDKIT=0 docker build --network=host -t robot_navigator-robot_navigator .
-# or ensure `iptable_raw` is loaded: `sudo modprobe iptable_raw`
 
-# One folder per invocation: {scenario}_{timestamp} unless --run-name is
-# given. Pre-created on the host so it inherits user ownership; the
-# bind-mounted volume surfaces container writes into it. Prior runs are
-# never overwritten.
-SCENARIO_NAME="${SCENARIO:-run}"
+# Distinct scenario/run-folder stem so probe runs don't overwrite or
+# visually merge with baseline runs. Explicit --run-name still wins.
+SCENARIO_NAME="${SCENARIO:-run_hold}"
 if [ -z "${RUN_NAME}" ]; then
     RUN_NAME="${SCENARIO_NAME}_$(date +%Y%m%d_%H%M%S)"
 fi
@@ -177,12 +140,11 @@ HOST_RUN_DIR="./experiment_logs/${RUN_NAME}"
 CONTAINER_RUN_DIR="/ros_ws/experiment_logs/${RUN_NAME}"
 mkdir -p "${HOST_RUN_DIR}"
 
-# Only forward args the user actually supplied; anything omitted falls
-# back to the launch file's defaults. `scenario` and `log_dir` are always
-# forwarded so the unique run folder is honoured.
 LAUNCH_ARGS=()
 LAUNCH_ARGS+=("scenario:=${SCENARIO_NAME}")
 LAUNCH_ARGS+=("log_dir:=${CONTAINER_RUN_DIR}")
+# The one knob that differs from the baseline script.
+LAUNCH_ARGS+=("hold_enabled:=true")
 [ -n "${ROBOT_IDS}"         ] && LAUNCH_ARGS+=("robot_ids:=${ROBOT_IDS}")
 [ -n "${FORMATION}"         ] && LAUNCH_ARGS+=("formation:=${FORMATION}")
 [ -n "${SPACING}"           ] && LAUNCH_ARGS+=("formation_spacing:=${SPACING}")
@@ -196,7 +158,10 @@ LAUNCH_ARGS+=("log_dir:=${CONTAINER_RUN_DIR}")
 [ -n "${RECORD_VIDEO}"      ] && LAUNCH_ARGS+=("record_video:=${RECORD_VIDEO}")
 [ -n "${VIDEO_FPS}"         ] && LAUNCH_ARGS+=("video_fps:=${VIDEO_FPS}")
 
-CONTAINER_NAME="belief_and_reward"
+# Separate container name so a stale baseline container doesn't block
+# us (and vice-versa). Still a singleton — can't coexist with a live
+# baseline run because the two fight over /global_reward.
+CONTAINER_NAME="belief_and_reward_hold"
 
 docker rm -f "${CONTAINER_NAME}" >/dev/null 2>&1 || true
 
@@ -205,20 +170,16 @@ docker compose run --remove-orphans -d \
     robot_navigator \
     ros2 launch robot_navigator belief_and_reward.launch.py "${LAUNCH_ARGS[@]}"
 
-echo "Started ${CONTAINER_NAME} — follow with: docker logs -f ${CONTAINER_NAME}"
+echo "Started ${CONTAINER_NAME} (HOLD model) — follow with: docker logs -f ${CONTAINER_NAME}"
 echo ""
 echo "Run folder: ${HOST_RUN_DIR}"
 echo ""
-echo "Reward + per-robot beliefs are up. Launch navigators separately:"
-echo "  ./run_navigator.sh 0 1 2"
+echo "Probe bit per robot:  ros2 topic echo /field/robot_0/hold_request"
+echo "Reward + beliefs up.  Launch navigators separately: ./run_navigator.sh 0 1 2"
 echo ""
 echo "Monitor reward:   ros2 topic echo /global_reward"
 echo "Monitor waypoint: ros2 topic echo /robot_0/waypoint"
 
-# Plot via a one-off container: reuses the robot_navigator image (which
-# has a matching numpy/matplotlib/pandas from apt), so we don't depend on
-# the Jetson host's Python stack. --user keeps PNG ownership on the host
-# user; HOME=/tmp avoids matplotlib cache warnings under a non-root UID.
 plot_in_container() {
     docker compose run --rm \
         --user "$(id -u):$(id -g)" \
@@ -230,14 +191,8 @@ plot_in_container() {
 
 PLOT_FALLBACK_HINT="plotter container failed — rerun manually: docker compose run --rm --user \$(id -u):\$(id -g) -e HOME=/tmp --entrypoint python3 robot_navigator /ros_ws/scripts/plot_experiment.py ${CONTAINER_RUN_DIR}"
 
-# Ctrl-C path: tell the container to shut down gracefully so video_recorder's
-# atexit/SIGTERM handlers run (finalize the mp4 moov atom) before the
-# process dies, then plot the trajectory overlays. `docker stop -t 15`
-# gives ros2 launch and its children 15 s to unwind — plenty since the
-# recorder's release is sub-second, but generous enough that the grace
-# window won't clip a slow belief-node shutdown.
 cleanup_on_interrupt() {
-    trap - INT TERM                        # re-interrupt = hard abort
+    trap - INT TERM
     echo ""
     echo "Interrupted — stopping ${CONTAINER_NAME} so the video finalizes..."
     docker stop -t 15 "${CONTAINER_NAME}" >/dev/null 2>&1 || true
@@ -247,10 +202,6 @@ cleanup_on_interrupt() {
 }
 trap cleanup_on_interrupt INT TERM
 
-# Stay attached so Ctrl-C triggers the trap above, whether this is a
-# --duration run (container self-exits when trajectory_logger's on_exit
-# Shutdown() cascades) or unbounded (docker wait blocks until the user
-# interrupts us or an external `docker stop`).
 echo ""
 if [ -n "${DURATION}" ] && awk "BEGIN{exit !(${DURATION}>0)}" 2>/dev/null; then
     echo "Waiting for ${CONTAINER_NAME} to exit (duration=${DURATION}s, Ctrl-C to stop early)..."

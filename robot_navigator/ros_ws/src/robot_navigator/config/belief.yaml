@@ -61,3 +61,22 @@ belief_node:
     # Set edge_margin_cells: 0 to disable.
     edge_margin_cells: 2
     edge_margin_weight: 5.0
+    # Hold / probe mechanism — 1-bit coordination channel. When one
+    # robot raises its bit, peers freeze at their current cell so Δr
+    # is attributable to the single mover. OFF by default — the
+    # baseline ./run_belief_and_reward.sh is plain UCB + repulsion.
+    # Enable via ./run_belief_and_reward_hold.sh (or pass
+    # hold_enabled:=true on the launch line) to run the probe model
+    # for comparison.
+    # Trigger (hand-tuned):
+    #   - hold_info_margin:   raise only when my best UCB score beats
+    #                         second-best by this absolute margin
+    #   - hold_reward_delta_threshold: and recent peak-to-peak reward
+    #                         change over hold_reward_window_sec is
+    #                         below this (group is stuck learning)
+    hold_enabled: false
+    hold_duration_sec: 3.0
+    hold_cooldown_sec: 4.0
+    hold_info_margin: 1.0
+    hold_reward_window_sec: 3.0
+    hold_reward_delta_threshold: 0.05
