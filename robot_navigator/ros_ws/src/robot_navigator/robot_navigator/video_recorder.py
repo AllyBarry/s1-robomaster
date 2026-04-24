@@ -116,6 +116,13 @@ class VideoRecorderNode(Node):
         }
         self._lock = threading.Lock()
 
+        # Diagnostic counters — surface what's actually arriving so a
+        # silent "no output file" failure is debuggable from the logs
+        # instead of from guessing which upstream topic is dead.
+        self._frames_received = 0
+        self._frames_written = 0
+        self._homography_updates = 0
+
         # Latched so we still receive the last-published H^-1 even if
         # field_localizer was already running before this node came up.
         latched_qos = QoSProfile(depth=1)
@@ -137,6 +144,8 @@ class VideoRecorderNode(Node):
                 10,
             )
 
+        self.create_timer(5.0, self._log_status)
+
         self.get_logger().info(
             f"video_recorder: image='{image_topic}', output_stem={self.video_stem}, "
             f"fps={self.fps}, robots={self.robot_ids}, "
@@ -157,7 +166,11 @@ class VideoRecorderNode(Node):
             return
         M = (self._T_field_to_pixel @ h).astype(np.float32)
         with self._lock:
+            first = self.warp_M is None
             self.warp_M = M
+            self._homography_updates += 1
+        if first:
+            self.get_logger().info("homography received — rectified recording enabled")
 
     def _on_markers(self, msg: MarkerArray):
         if self.targets is not None:
@@ -187,6 +200,7 @@ class VideoRecorderNode(Node):
             return
 
         with self._lock:
+            self._frames_received += 1
             M = None if self.warp_M is None else self.warp_M.copy()
             trails = {rid: list(pts) for rid, pts in self.trails.items()}
             targets = list(self.targets) if self.targets else []
@@ -210,6 +224,7 @@ class VideoRecorderNode(Node):
 
         self._draw_field_overlay(warped, trails, targets)
         self.writer.write(warped)
+        self._frames_written += 1
 
     def _open_writer(self) -> bool:
         for fourcc_str, ext in _CODEC_CHAIN:
@@ -270,6 +285,29 @@ class VideoRecorderNode(Node):
             cv2.putText(frame, f"r{rid}", (cx + 8, cy - 8),
                         cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 2,
                         lineType=cv2.LINE_AA)
+
+    def _log_status(self):
+        # Warn loudly if we've been up but nothing is flowing — most
+        # common cause is field_localizer never seeing all 4 corner tags
+        # (or the apriltag_detector container not having the
+        # /field/homography_inv publisher from a stale build).
+        if self._frames_received == 0:
+            self.get_logger().warning(
+                "no frames on image topic yet — check that detection_overlay "
+                "is running and publishing /detections/image"
+            )
+            return
+        if self._homography_updates == 0:
+            self.get_logger().warning(
+                f"received {self._frames_received} image frames but no "
+                "/field/homography_inv yet — check that all 4 corner tags "
+                "are visible and the apriltag_detector container has been rebuilt"
+            )
+            return
+        self.get_logger().info(
+            f"frames_in={self._frames_received} frames_written={self._frames_written} "
+            f"H_updates={self._homography_updates} -> {self.video_path}"
+        )
 
     def close_writer(self):
         if self.writer is not None:
