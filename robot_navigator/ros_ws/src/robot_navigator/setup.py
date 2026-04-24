@@ -22,6 +22,7 @@ setup(
             "belief = robot_navigator.belief:main",
             "trajectory_logger = robot_navigator.trajectory_logger:main",
             "go_to_starts = robot_navigator.go_to_starts:main",
+            "go_to_starts_lite = robot_navigator.go_to_starts_lite:main",
         ],
     },
     install_requires=["setuptools"],
