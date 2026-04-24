@@ -1,5 +1,5 @@
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription, OpaqueFunction
+from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription, OpaqueFunction, Shutdown
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
@@ -26,6 +26,8 @@ def _launch_setup(context, *args, **kwargs):
     duration_sec = LaunchConfiguration("duration_sec").perform(context)
     log_dir = LaunchConfiguration("log_dir").perform(context)
     sample_hz = LaunchConfiguration("sample_hz").perform(context)
+    record_video = LaunchConfiguration("record_video").perform(context).lower() == "true"
+    video_fps = LaunchConfiguration("video_fps").perform(context)
 
     actions = []
 
@@ -70,6 +72,11 @@ def _launch_setup(context, *args, **kwargs):
     # trajectory_logger records per-tick robot poses and global_reward into
     # a CSV plus a JSON sidecar with targets — consumed offline by
     # scripts/plot_experiment.py.
+    # on_exit=Shutdown() — when trajectory_logger hits duration_sec and
+    # calls os._exit(0), cascade a clean SIGINT to every sibling node so
+    # video_recorder can finalize its mp4 moov atom before the container
+    # is torn down (otherwise docker compose eventually SIGKILLs it and
+    # the file is unplayable).
     actions.append(Node(
         package="robot_navigator",
         executable="trajectory_logger",
@@ -82,7 +89,25 @@ def _launch_setup(context, *args, **kwargs):
             "sample_hz": float(sample_hz),
         }],
         output="screen",
+        on_exit=Shutdown(),
     ))
+
+    # Optional: record the overhead camera with per-robot trail overlays
+    # to {log_dir}/{scenario}.mp4. Relies on field_localizer publishing
+    # /field/homography_inv so trails can be projected into pixel space.
+    if record_video:
+        actions.append(Node(
+            package="robot_navigator",
+            executable="video_recorder",
+            name="video_recorder",
+            parameters=[{
+                "robot_ids": robot_ids,
+                "scenario": scenario,
+                "log_dir": log_dir,
+                "fps": float(video_fps),
+            }],
+            output="screen",
+        ))
 
     return actions
 
@@ -148,6 +173,16 @@ def generate_launch_description():
             "sample_hz",
             default_value="10.0",
             description="Logger sampling rate (Hz)",
+        ),
+        DeclareLaunchArgument(
+            "record_video",
+            default_value="false",
+            description="If true, record the overhead camera with trajectory overlays to {scenario}.mp4",
+        ),
+        DeclareLaunchArgument(
+            "video_fps",
+            default_value="5.0",
+            description="Output video frame rate (match detection_overlay's publish_rate_hz for real-time playback)",
         ),
         OpaqueFunction(function=_launch_setup),
     ])
