@@ -187,11 +187,24 @@ docker compose run --remove-orphans -d \
 echo "Started ${CONTAINER_NAME} — follow with: docker logs -f ${CONTAINER_NAME}"
 echo ""
 echo "Run folder: ${HOST_RUN_DIR}"
-echo "Plot after the run with:"
-echo "  python3 scripts/plot_experiment.py ${HOST_RUN_DIR}"
 echo ""
 echo "Reward + per-robot beliefs are up. Launch navigators separately:"
 echo "  ./run_navigator.sh 0 1 2"
 echo ""
 echo "Monitor reward:   ros2 topic echo /global_reward"
 echo "Monitor waypoint: ros2 topic echo /robot_0/waypoint"
+
+# Auto-plot only on bounded runs — for DURATION=0 (or unset) we don't know
+# when the user will stop, so we leave the plot invocation to them.
+if [ -n "${DURATION}" ] && awk "BEGIN{exit !(${DURATION}>0)}" 2>/dev/null; then
+    echo ""
+    echo "Waiting for ${CONTAINER_NAME} to exit (duration=${DURATION}s)..."
+    docker wait "${CONTAINER_NAME}" >/dev/null || true
+    echo "${CONTAINER_NAME} exited — generating plots in ${HOST_RUN_DIR}/plots/"
+    python3 scripts/plot_experiment.py "${HOST_RUN_DIR}" \
+        || echo "plot_experiment.py failed — regenerate manually: python3 scripts/plot_experiment.py ${HOST_RUN_DIR}"
+else
+    echo ""
+    echo "Plot after the run with:"
+    echo "  python3 scripts/plot_experiment.py ${HOST_RUN_DIR}"
+fi
