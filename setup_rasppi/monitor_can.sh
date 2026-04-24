@@ -3,7 +3,19 @@
 SESSION="canmon"
 CONTAINER="robomaster_bridge"
 
-export PATH="$PWD:$PATH"
+USER_NAME="${SUDO_USER:-rasppiuser}"
+USER_HOME="$(getent passwd "$USER_NAME" | cut -d: -f6)"
+TOOLS_DIR="${USER_HOME}/Documents/dars/s1-robomaster/setup_rasppi"
+
+BASHRC="${USER_HOME}/.bashrc"
+
+if ! grep -Fq "${TOOLS_DIR}" "${BASHRC}"; then
+    echo "" >> "${BASHRC}"
+    echo "# RoboMaster tools path" >> "${BASHRC}"
+    echo "export PATH=\"${TOOLS_DIR}:\$PATH\"" >> "${BASHRC}"
+fi
+
+chown "${USER_NAME}:${USER_NAME}" "${BASHRC}"
 
 tmux has-session -t "$SESSION" 2>/dev/null && exec tmux attach -t "$SESSION"
 
