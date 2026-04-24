@@ -13,11 +13,19 @@ RUN apt-get update && apt-get install -y \
     ros-humble-image-proc \
     ros-humble-apriltag-ros \
     ros-humble-cv-bridge \
+    ros-humble-v4l2-camera \
+    v4l-utils \
     python3-opencv \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /ros_ws
 COPY ros_ws/src /ros_ws/src
+
+# Camera calibration — v4l2_camera reads it at runtime via
+# camera_info_url. Name it webcam.yaml to match the node name so the
+# default URL (file:///root/.ros/camera_info/webcam.yaml) resolves.
+RUN mkdir -p /root/.ros/camera_info/
+COPY camera_info/webcam.yaml /root/.ros/camera_info/webcam.yaml
 
 RUN source /opt/ros/humble/setup.bash && \
     colcon build --symlink-install
@@ -30,4 +38,4 @@ ENV RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
 ENV CYCLONEDDS_URI=/etc/cyclone_dds.xml
 
 ENTRYPOINT ["/entrypoint.sh"]
-CMD ["ros2", "launch", "apriltag_detector", "apriltag.launch.py"]
+CMD ["ros2", "launch", "apriltag_detector", "onboard.launch.py"]
