@@ -1,20 +1,24 @@
 """
-Records the overhead camera stream with per-robot trajectory overlays.
+Records a bird's-eye, field-rectified camera stream with trajectory overlays.
 
-Subscribes to the annotated apriltag image stream, the inverse homography
-published by field_localizer, each robot's `/field/robot_{id}/pose`, and
-`/target_markers` (for formation target crosses). On every incoming frame
-it projects field-frame trails and target positions into pixel space via
-the inverse homography and writes the composited frame to
-`{log_dir}/{scenario}.mp4`.
+Each incoming source frame is warped so that the four field corner tags
+land exactly at the frame corners — the output is cropped to the field
+boundary and the perspective distortion is removed. Trails and target
+crosses are drawn in the rectified image directly in field metres, so
+they line up with the video regardless of camera mounting angle.
 
-Drops into the same run folder as trajectory_logger so each experiment
-carries its own video artifact alongside the CSV, JSON sidecar, and
-`plots/` directory.
+Subscribes to the apriltag debug image, the inverse homography published
+by field_localizer (used to derive the source→rectified warp), each
+robot's `/field/robot_{id}/pose`, and `/target_markers`. Output drops
+into the run folder as `{scenario}.mp4` alongside the CSV, JSON
+sidecar, and `plots/` directory.
 """
 
+import atexit
 import collections
 import pathlib
+import signal
+import sys
 import threading
 
 import cv2
@@ -38,6 +42,17 @@ _PALETTE_BGR = [
     (180, 100, 220),  # purple
 ]
 
+# Ordered codec fallback: MJPG/.avi first because it's the one combo that
+# reliably works across Jetson apt opencv builds — avc1/mp4v both pass
+# cv2.VideoWriter.isOpened() even when the underlying h264/mpeg4 encoder
+# is missing or broken, producing "opened but garbage" files. Trading the
+# .mp4 extension for a file that actually plays is the right default.
+_CODEC_CHAIN = [
+    ("MJPG", ".avi"),
+    ("mp4v", ".mp4"),
+    ("avc1", ".mp4"),
+]
+
 
 class VideoRecorderNode(Node):
     def __init__(self):
@@ -51,6 +66,9 @@ class VideoRecorderNode(Node):
         self.declare_parameter("markers_topic", "/target_markers")
         self.declare_parameter("fps", 5.0)
         self.declare_parameter("trail_length", 0)
+        self.declare_parameter("field_width", 3.0)
+        self.declare_parameter("field_height", 3.0)
+        self.declare_parameter("output_width", 600)
 
         self.robot_ids = [int(v) for v in self.get_parameter("robot_ids").value]
         self.log_dir = pathlib.Path(self.get_parameter("log_dir").value)
@@ -60,14 +78,34 @@ class VideoRecorderNode(Node):
         image_topic = str(self.get_parameter("image_topic").value)
         hom_topic = str(self.get_parameter("homography_topic").value)
         markers_topic = str(self.get_parameter("markers_topic").value)
+        self.field_w = float(self.get_parameter("field_width").value)
+        self.field_h = float(self.get_parameter("field_height").value)
+        self.out_w = int(self.get_parameter("output_width").value)
+        # Preserve field aspect ratio so metres are isotropic on screen.
+        self.out_h = int(round(self.out_w * self.field_h / self.field_w))
 
         self.log_dir.mkdir(parents=True, exist_ok=True)
-        self.video_path = self.log_dir / f"{self.scenario}.mp4"
+        self.video_stem = self.log_dir / self.scenario
+        self.video_path: pathlib.Path | None = None
 
         self.bridge = CvBridge()
         self.writer: cv2.VideoWriter | None = None
-        self.h_inv: np.ndarray | None = None
+        self.frame_size: tuple[int, int] | None = None
+        # M maps source pixel -> rectified output pixel (field-aligned).
+        # Updated whenever field_localizer republishes the homography.
+        self.warp_M: np.ndarray | None = None
         self.targets: list[tuple[float, float]] | None = None
+
+        # Field metres -> rectified pixel (linear, no homography needed
+        # once the frame is warped). y is flipped so field +Y is at the
+        # top of the frame, matching how the operator sees the arena.
+        self._sx = self.out_w / self.field_w
+        self._sy = self.out_h / self.field_h
+        self._T_field_to_pixel = np.array([
+            [self._sx, 0.0,        0.0],
+            [0.0,     -self._sy,   float(self.out_h)],
+            [0.0,      0.0,        1.0],
+        ], dtype=np.float32)
 
         maxlen = trail_len if trail_len > 0 else None
         self.trails: dict[int, collections.deque] = {
@@ -78,6 +116,13 @@ class VideoRecorderNode(Node):
             for i, rid in enumerate(self.robot_ids)
         }
         self._lock = threading.Lock()
+
+        # Diagnostic counters — surface what's actually arriving so a
+        # silent "no output file" failure is debuggable from the logs
+        # instead of from guessing which upstream topic is dead.
+        self._frames_received = 0
+        self._frames_written = 0
+        self._homography_updates = 0
 
         # Latched so we still receive the last-published H^-1 even if
         # field_localizer was already running before this node came up.
@@ -100,16 +145,33 @@ class VideoRecorderNode(Node):
                 10,
             )
 
+        self.create_timer(5.0, self._log_status)
+
         self.get_logger().info(
-            f"video_recorder: image='{image_topic}', output={self.video_path}, "
-            f"fps={self.fps}, robots={self.robot_ids}"
+            f"video_recorder: image='{image_topic}', output_stem={self.video_stem}, "
+            f"fps={self.fps}, robots={self.robot_ids}, "
+            f"rectified_size={self.out_w}x{self.out_h} "
+            f"(field {self.field_w}x{self.field_h} m)"
         )
 
     def _on_homography(self, msg: Float32MultiArray):
         if len(msg.data) != 9:
             return
+        h_inv = np.array(msg.data, dtype=np.float32).reshape(3, 3)
+        try:
+            # field_localizer publishes the *inverse* (field -> pixel);
+            # for the warp we need pixel -> field, then field -> output.
+            h = np.linalg.inv(h_inv).astype(np.float32)
+        except np.linalg.LinAlgError:
+            self.get_logger().warning("homography non-invertible — skipping update")
+            return
+        M = (self._T_field_to_pixel @ h).astype(np.float32)
         with self._lock:
-            self.h_inv = np.array(msg.data, dtype=np.float32).reshape(3, 3)
+            first = self.warp_M is None
+            self.warp_M = M
+            self._homography_updates += 1
+        if first:
+            self.get_logger().info("homography received — rectified recording enabled")
 
     def _on_markers(self, msg: MarkerArray):
         if self.targets is not None:
@@ -138,48 +200,72 @@ class VideoRecorderNode(Node):
             self.get_logger().warning(f"cv_bridge convert failed: {e}")
             return
 
-        if self.writer is None:
-            h, w = frame.shape[:2]
-            fourcc = cv2.VideoWriter_fourcc(*"mp4v")
-            self.writer = cv2.VideoWriter(
-                str(self.video_path), fourcc, self.fps, (w, h)
-            )
-            if not self.writer.isOpened():
-                self.get_logger().error(
-                    f"VideoWriter failed to open {self.video_path} — disabling"
-                )
-                self.writer = None
-                return
-            self.get_logger().info(
-                f"video_recorder: writing {w}x{h} @ {self.fps} fps "
-                f"-> {self.video_path}"
-            )
-
         with self._lock:
-            h_inv = None if self.h_inv is None else self.h_inv.copy()
+            self._frames_received += 1
+            M = None if self.warp_M is None else self.warp_M.copy()
             trails = {rid: list(pts) for rid, pts in self.trails.items()}
             targets = list(self.targets) if self.targets else []
 
-        if h_inv is not None:
-            self._draw_overlay(frame, h_inv, trails, targets)
+        # Without a homography we can't rectify — drop the frame rather
+        # than record a raw-perspective segment that won't line up with
+        # the rest of the recording.
+        if M is None:
+            return
 
-        self.writer.write(frame)
+        warped = cv2.warpPerspective(
+            frame, M, (self.out_w, self.out_h),
+            flags=cv2.INTER_LINEAR,
+            borderMode=cv2.BORDER_CONSTANT,
+            borderValue=(0, 0, 0),
+        )
 
-    def _field_to_pixel(self, pts_xy: np.ndarray, h_inv: np.ndarray) -> np.ndarray:
+        if self.writer is None:
+            if not self._open_writer():
+                return
+
+        self._draw_field_overlay(warped, trails, targets)
+        self.writer.write(warped)
+        self._frames_written += 1
+
+    def _open_writer(self) -> bool:
+        for fourcc_str, ext in _CODEC_CHAIN:
+            path = self.video_stem.with_suffix(ext)
+            fourcc = cv2.VideoWriter_fourcc(*fourcc_str)
+            writer = cv2.VideoWriter(
+                str(path), fourcc, self.fps, (self.out_w, self.out_h)
+            )
+            if writer.isOpened():
+                self.writer = writer
+                self.frame_size = (self.out_w, self.out_h)
+                self.video_path = path
+                self.get_logger().info(
+                    f"video_recorder: writing {self.out_w}x{self.out_h} "
+                    f"@ {self.fps} fps [{fourcc_str}] -> {path}"
+                )
+                return True
+            writer.release()
+            self.get_logger().warning(
+                f"codec {fourcc_str} ({ext}) unavailable — trying next"
+            )
+        self.get_logger().error(
+            "no working VideoWriter codec — disabling recording"
+        )
+        return False
+
+    def _field_to_pixel(self, pts_xy: np.ndarray) -> np.ndarray:
         if pts_xy.size == 0:
             return np.empty((0, 2), dtype=np.int32)
-        src = pts_xy.reshape(-1, 1, 2).astype(np.float32)
-        mapped = cv2.perspectiveTransform(src, h_inv)
-        return mapped.reshape(-1, 2).astype(np.int32)
+        arr = np.asarray(pts_xy, dtype=np.float32).reshape(-1, 2)
+        px = arr[:, 0] * self._sx
+        py = float(self.out_h) - arr[:, 1] * self._sy
+        return np.stack([px, py], axis=1).astype(np.int32)
 
-    def _draw_overlay(self, frame, h_inv, trails, targets):
+    def _draw_field_overlay(self, frame, trails, targets):
         if targets:
-            tgt_px = self._field_to_pixel(
-                np.array(targets, dtype=np.float32), h_inv,
-            )
+            tgt_px = self._field_to_pixel(np.array(targets, dtype=np.float32))
             for (x, y) in tgt_px:
                 # Black outline + white fill so targets read against both
-                # bright and dark patches of the field.
+                # bright and dark patches of the rectified field.
                 cv2.drawMarker(frame, (int(x), int(y)), (0, 0, 0),
                                markerType=cv2.MARKER_TILTED_CROSS,
                                markerSize=24, thickness=4)
@@ -190,9 +276,7 @@ class VideoRecorderNode(Node):
         for rid, pts in trails.items():
             if not pts:
                 continue
-            pix = self._field_to_pixel(
-                np.array(pts, dtype=np.float32), h_inv,
-            )
+            pix = self._field_to_pixel(np.array(pts, dtype=np.float32))
             color = self._colors.get(rid, (200, 200, 200))
             if len(pix) >= 2:
                 cv2.polylines(frame, [pix], isClosed=False, color=color,
@@ -203,24 +287,63 @@ class VideoRecorderNode(Node):
                         cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 2,
                         lineType=cv2.LINE_AA)
 
-    def destroy_node(self):
+    def _log_status(self):
+        # Warn loudly if we've been up but nothing is flowing — most
+        # common cause is field_localizer never seeing all 4 corner tags
+        # (or the apriltag_detector container not having the
+        # /field/homography_inv publisher from a stale build).
+        if self._frames_received == 0:
+            self.get_logger().warning(
+                "no frames on image topic yet — check that detection_overlay "
+                "is running and publishing /detections/image"
+            )
+            return
+        if self._homography_updates == 0:
+            self.get_logger().warning(
+                f"received {self._frames_received} image frames but no "
+                "/field/homography_inv yet — check that all 4 corner tags "
+                "are visible and the apriltag_detector container has been rebuilt"
+            )
+            return
+        self.get_logger().info(
+            f"frames_in={self._frames_received} frames_written={self._frames_written} "
+            f"H_updates={self._homography_updates} -> {self.video_path}"
+        )
+
+    def close_writer(self):
         if self.writer is not None:
             self.writer.release()
             self.get_logger().info(f"video_recorder: closed {self.video_path}")
             self.writer = None
+
+    def destroy_node(self):
+        self.close_writer()
         super().destroy_node()
 
 
 def main(args=None):
     rclpy.init(args=args)
     node = VideoRecorderNode()
+
+    # Two-layer safety net so the mp4 moov atom is always finalized:
+    # (1) atexit runs on any Python-level exit (SystemExit, normal return,
+    #     uncaught exception); (2) the SIGTERM handler converts docker's
+    #     graceful-stop signal into SystemExit so atexit actually fires
+    #     — rclpy's default signal handling covers SIGINT but not SIGTERM.
+    atexit.register(node.close_writer)
+    signal.signal(signal.SIGTERM, lambda *_: sys.exit(0))
+
     try:
         rclpy.spin(node)
     except KeyboardInterrupt:
         pass
     finally:
-        node.destroy_node()
-        rclpy.shutdown()
+        node.close_writer()
+        try:
+            node.destroy_node()
+        finally:
+            if rclpy.ok():
+                rclpy.shutdown()
 
 
 if __name__ == "__main__":

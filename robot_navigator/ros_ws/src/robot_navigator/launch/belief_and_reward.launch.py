@@ -1,5 +1,5 @@
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription, OpaqueFunction
+from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription, OpaqueFunction, Shutdown
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
@@ -72,6 +72,11 @@ def _launch_setup(context, *args, **kwargs):
     # trajectory_logger records per-tick robot poses and global_reward into
     # a CSV plus a JSON sidecar with targets — consumed offline by
     # scripts/plot_experiment.py.
+    # on_exit=Shutdown() — when trajectory_logger hits duration_sec and
+    # calls os._exit(0), cascade a clean SIGINT to every sibling node so
+    # video_recorder can finalize its mp4 moov atom before the container
+    # is torn down (otherwise docker compose eventually SIGKILLs it and
+    # the file is unplayable).
     actions.append(Node(
         package="robot_navigator",
         executable="trajectory_logger",
@@ -84,6 +89,7 @@ def _launch_setup(context, *args, **kwargs):
             "sample_hz": float(sample_hz),
         }],
         output="screen",
+        on_exit=Shutdown(),
     ))
 
     # Optional: record the overhead camera with per-robot trail overlays

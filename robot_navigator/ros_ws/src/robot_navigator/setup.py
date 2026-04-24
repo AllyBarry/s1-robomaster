@@ -23,6 +23,7 @@ setup(
             "trajectory_logger = robot_navigator.trajectory_logger:main",
             "video_recorder = robot_navigator.video_recorder:main",
             "go_to_starts = robot_navigator.go_to_starts:main",
+            "go_to_starts_lite = robot_navigator.go_to_starts_lite:main",
         ],
     },
     install_requires=["setuptools"],

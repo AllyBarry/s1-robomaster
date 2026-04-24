@@ -11,6 +11,7 @@ RUN apt-get update && apt-get install -y \
     python3-pandas \
     python3-matplotlib \
     python3-opencv \
+    ffmpeg \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /ros_ws
