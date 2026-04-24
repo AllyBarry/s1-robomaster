@@ -22,6 +22,8 @@ from std_msgs.msg import Bool
 
 
 FIELD_SIZE_M = 3.0
+# Stay off the corner AprilTags — parking on them blocks the homography.
+CORNER_INSET_M = 0.4
 FIELD_TOPIC_RE = re.compile(r"^/field/robot_(\d+)/pose$")
 
 STATE_DISCOVER = "DISCOVER"
@@ -49,8 +51,9 @@ def _shape_targets(shape: str, center: tuple[float, float],
                    spacing: float, yaw: float) -> list[tuple[float, float]]:
     """Generate target (x, y) points in field frame for the requested shape."""
     if shape == "corners":
-        return [(0.0, 0.0), (FIELD_SIZE_M, 0.0),
-                (FIELD_SIZE_M, FIELD_SIZE_M), (0.0, FIELD_SIZE_M)]
+        i = CORNER_INSET_M
+        return [(i, i), (FIELD_SIZE_M - i, i),
+                (FIELD_SIZE_M - i, FIELD_SIZE_M - i), (i, FIELD_SIZE_M - i)]
 
     if shape == "line":
         local = [(-1.5 * spacing, 0.0), (-0.5 * spacing, 0.0),
