@@ -14,10 +14,12 @@ def _launch_setup(context, *args, **kwargs):
     publish_waypoints = LaunchConfiguration("publish_waypoints").perform(context)
     peer_csv = LaunchConfiguration("peer_robot_ids").perform(context).strip()
     peer_ids = [int(v) for v in peer_csv.split(",") if v.strip()]
+    hold_enabled = LaunchConfiguration("hold_enabled").perform(context).lower() == "true"
 
     overrides = {
         "robot_id": int(robot_id),
         "publish_waypoints": publish_waypoints.lower() == "true",
+        "hold_enabled": hold_enabled,
     }
     # Only override peer_robot_ids when non-empty: an empty list gets
     # inferred as BYTE_ARRAY and conflicts with the declared INTEGER_ARRAY.
@@ -50,10 +52,19 @@ def generate_launch_description():
         default_value="",
         description="Comma-separated peer robot IDs for repulsive collision avoidance",
     )
+    hold_enabled_arg = DeclareLaunchArgument(
+        "hold_enabled",
+        default_value="false",
+        description=(
+            "Enable the 1-bit hold/probe coordination channel. OFF by default — "
+            "flip to true to run the probe model (see run_belief_and_reward_hold.sh)."
+        ),
+    )
 
     return LaunchDescription([
         robot_id_arg,
         publish_waypoints_arg,
         peer_ids_arg,
+        hold_enabled_arg,
         OpaqueFunction(function=_launch_setup),
     ])
