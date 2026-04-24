@@ -1,0 +1,15 @@
+services:
+  broker:
+    build:
+      context: .
+    container_name: camera_broker
+    privileged: true
+    volumes:
+      - /dev:/dev
+    environment:
+      - SRC_DEVICE=/dev/video1
+      - DST_DEVICE=/dev/video20
+      - WIDTH=640
+      - HEIGHT=480
+      - FPS=30
+    restart: unless-stopped

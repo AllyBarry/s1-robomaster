@@ -136,8 +136,8 @@ def generate_launch_description():
     return LaunchDescription([
         DeclareLaunchArgument(
             "video_device",
-            default_value="/dev/video1",
-            description="V4L2 video device path",
+            default_value="/dev/video20",
+            description="V4L2 video device path (defaults to camera_broker loopback; pass /dev/video1 to bypass)",
         ),
         DeclareLaunchArgument(
             "image_width",

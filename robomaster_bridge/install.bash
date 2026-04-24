@@ -10,21 +10,17 @@ fi
 ROBOT_ID="${1:?Usage: sudo $0 <robot_id>  (e.g. sudo $0 4)}"
 IMAGE_NAME="robomaster_bridge:latest"
 SERVICE_NAME="robomaster_bridge"
-GATEWAY_SERVICE_NAME="robomaster_domain_bridge"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-# Domain topology:
-#   LOCAL_DOMAIN (on-robot, private) — high-rate sensor data stays here
-#   PUBLIC_DOMAIN (network) — only bridged topics reach here
 LOCAL_DOMAIN=10
 PUBLIC_DOMAIN=0
 
-echo "Ensure Docker is enabled on boot"
+echo "Ensure Docker is enabled"
 systemctl enable docker
 systemctl start docker
 
-if [ -z "$(docker images -q ${IMAGE_NAME} 2> /dev/null)" ]; then
-    echo "Build docker container (limited to 75% RAM to keep SSH alive)"
+if [ -z "$(docker images -q ${IMAGE_NAME} 2>/dev/null)" ]; then
+    echo "Build docker container"
     MEM_TOTAL_KB=$(awk '/MemTotal/ {print $2}' /proc/meminfo)
     MEM_LIMIT=$(( MEM_TOTAL_KB * 3 / 4 ))k
     docker build --memory="${MEM_LIMIT}" . -t ${IMAGE_NAME}
@@ -40,7 +36,7 @@ EOF
 echo "Install Cyclone DDS config"
 cp "${SCRIPT_DIR}/../cyclone_dds.xml" /etc/cyclone_dds.xml
 
-echo "Prepare system service and config files"
+echo "Prepare systemd service"
 
 set +e
 read -r -d '' bridge_service <<'EOF'
@@ -79,6 +75,18 @@ RestartSec=5
 WantedBy=multi-user.target
 EOF
 
+read -r -d '' bridge_timer <<'EOF'
+[Unit]
+Description=Start RoboMaster CAN Bridge after boot delay
+
+[Timer]
+OnBootSec=30
+Unit=robomaster_bridge.service
+
+[Install]
+WantedBy=timers.target
+EOF
+
 read -r -d '' can_modules <<'EOF'
 can
 can_raw
@@ -95,8 +103,9 @@ RestartSec=100ms
 EOF
 set -e
 
-echo "Write systemd service"
+echo "Write systemd service and timer"
 echo "${bridge_service}" > /etc/systemd/system/${SERVICE_NAME}.service
+echo "${bridge_timer}" > /etc/systemd/system/${SERVICE_NAME}.timer
 
 echo "Write kernel module load config"
 echo "${can_modules}" > /etc/modules-load.d/can.conf
@@ -108,13 +117,17 @@ echo "${can_network}" > /etc/systemd/network/80-can.network
 echo "Reload systemd"
 systemctl daemon-reload
 
-echo "Enable systemd-networkd to bring up CAN on boot"
+echo "Enable systemd-networkd"
 systemctl enable systemd-networkd
 systemctl restart systemd-networkd
 
-echo "Enable and start RoboMaster bridge service"
-systemctl enable ${SERVICE_NAME}
-systemctl restart ${SERVICE_NAME}
+echo "Use timer for delayed bridge startup"
+systemctl disable ${SERVICE_NAME}.service || true
+systemctl enable ${SERVICE_NAME}.timer
+systemctl restart ${SERVICE_NAME}.timer
+
+echo "Start bridge now"
+systemctl restart ${SERVICE_NAME}.service
 
 echo "Done."
 echo ""
@@ -126,4 +139,7 @@ echo "  /robot_${ROBOT_ID}/cmd_vel       (publish — velocity commands)"
 echo "  /robot_${ROBOT_ID}/cmd_wheels    (publish — wheel commands)"
 echo "  /robot_${ROBOT_ID}/battery_state (subscribe — battery telemetry)"
 echo ""
-echo "Make sure your Pi boot config has the correct MCP2515 overlay for your exact Waveshare HAT revision, then reboot if you changed boot config."
+echo "Check status with:"
+echo "  systemctl status ${SERVICE_NAME}.service --no-pager -l"
+echo "  systemctl status ${SERVICE_NAME}.timer --no-pager"
+echo "  journalctl -u ${SERVICE_NAME}.service -b --no-pager"
