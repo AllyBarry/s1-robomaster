@@ -1,23 +1,20 @@
 """
-Single-process onboard vision pipeline: camera → rectify → apriltag, plus
+Onboard vision pipeline: compressed camera input → rectify → apriltag, plus
 the field_localizer / overlay / visualizer standalone Python nodes.
 
-Running the camera and image processing in one ComposableNodeContainer
-keeps raw images in intra-process memory — they never cross DDS. This
-avoids the fragmented-large-message failure mode we hit when the camera
-and apriltag ran in separate containers (rectify silently saw zero
-images despite image_raw flowing on the network).
+The camera itself runs in the separate `rpi_camera_streamer` container,
+which owns /dev/video1 and publishes /webcam/image_raw (raw) plus
+/webcam/image_raw/compressed (JPEG, via image_transport_plugins). This
+container subscribes to the compressed topic — small messages don't hit
+the DDS fragmentation failure mode that raw cross-container images did.
+rectify decompresses on arrival and hands raw pixels intra-process to
+apriltag, so the hot path (rectify → apriltag) is still zero-copy.
 
 Network-exposed topics (what downstream consumers should use):
   /detections                    AprilTagDetectionArray
   /field/robot_{id}/pose         PoseStamped (via field_localizer)
   /target_markers                MarkerArray  (via field_visualizer)
   /detections/image/compressed   CompressedImage (throttled, for RViz)
-
-Raw / rectified image topics are NOT recommended for remote consumers:
-even though they're advertised on DDS, subscribing across the network
-re-introduces the fragmentation problem. Use `publish_raw:=true` only
-for local calibration / bag recording.
 """
 
 from launch import LaunchDescription
@@ -34,16 +31,11 @@ def generate_launch_description():
     apriltag_yaml = os.path.join(pkg_share, "config", "apriltag.yaml")
     field_yaml = os.path.join(pkg_share, "config", "field.yaml")
 
-    video_device = LaunchConfiguration("video_device")
-    image_width = LaunchConfiguration("image_width")
-    image_height = LaunchConfiguration("image_height")
-    camera_info_url = LaunchConfiguration("camera_info_url")
     overlay_rate = LaunchConfiguration("overlay_rate_hz")
 
-    # Everything that touches raw pixels lives in one process so the
-    # camera → rectify → apriltag hop is intra-process (zero-copy, no
-    # DDS serialization). use_intra_process_comms=True is the switch
-    # that actually makes that work.
+    # rectify subscribes to /webcam/image_raw using the "compressed" image
+    # transport (so the wire format is JPEG), decompresses, and emits raw
+    # image_rect intra-process to apriltag.
     image_container = ComposableNodeContainer(
         name="image_container",
         namespace="",
@@ -52,27 +44,10 @@ def generate_launch_description():
         output="screen",
         composable_node_descriptions=[
             ComposableNode(
-                package="v4l2_camera",
-                plugin="v4l2_camera::V4L2Camera",
-                name="webcam",
-                parameters=[{
-                    "video_device": video_device,
-                    "image_size": [image_width, image_height],
-                    "pixel_format": "YUYV",
-                    "io_method": "read",
-                    "camera_frame_id": "webcam_link",
-                    "camera_info_url": camera_info_url,
-                }],
-                remappings=[
-                    ("image_raw", "/webcam/image_raw"),
-                    ("camera_info", "/webcam/camera_info"),
-                ],
-                extra_arguments=[{"use_intra_process_comms": True}],
-            ),
-            ComposableNode(
                 package="image_proc",
                 plugin="image_proc::RectifyNode",
                 name="rectify",
+                parameters=[{"image_transport": "compressed"}],
                 remappings=[
                     ("image", "/webcam/image_raw"),
                     ("camera_info", "/webcam/camera_info"),
@@ -134,26 +109,6 @@ def generate_launch_description():
     )
 
     return LaunchDescription([
-        DeclareLaunchArgument(
-            "video_device",
-            default_value="/dev/video20",
-            description="V4L2 video device path (defaults to camera_broker loopback; pass /dev/video1 to bypass)",
-        ),
-        DeclareLaunchArgument(
-            "image_width",
-            default_value="640",
-            description="Image width (pixels)",
-        ),
-        DeclareLaunchArgument(
-            "image_height",
-            default_value="480",
-            description="Image height (pixels)",
-        ),
-        DeclareLaunchArgument(
-            "camera_info_url",
-            default_value="file:///root/.ros/camera_info/webcam.yaml",
-            description="Calibration file path (file:// URL)",
-        ),
         DeclareLaunchArgument(
             "overlay_rate_hz",
             default_value="5.0",
