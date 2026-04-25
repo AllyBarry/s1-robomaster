@@ -26,8 +26,10 @@ SPACING="1.0"                   # m, applied to every phase
 CENTER_X="1.5"                  # m, formation centre x
 CENTER_Y="1.5"                  # m, formation centre y
 
-REACH_THRESHOLD="-0.2"          # /global_reward must hold above this
-HOLD_SEC="3.0"                  # this long to register "reached"
+REACH_THRESHOLD="-0.6"          # EMA-smoothed reward must clear this for HOLD_SEC
+PEAK_THRESHOLD="-0.15"          # OR a single instant crossing this trips it
+HOLD_SEC="2.0"                  # how long the EMA must hold above REACH_THRESHOLD
+EMA_ALPHA="0.2"                 # 0.1=very slow, 1.0=no smoothing
 TIMEOUT_SEC="60"                # bail to next phase regardless
 
 ASSIGNMENT="ordered"            # ordered | nearest
@@ -63,10 +65,15 @@ cleanup() {
     CLEANED=1
     echo ""
     echo "=== Cleanup ==="
-    docker rm -f belief_and_reward >/dev/null 2>&1 || true
+    # Navigators first: kills cmd_vel publishing immediately so the
+    # robomaster_bridge watchdog stops the robots, instead of letting
+    # them keep tracking a stale waypoint while we kill beliefs.
     for id in ${NAV_IDS}; do
         docker rm -f "robot_navigator_${id}" >/dev/null 2>&1 || true
     done
+    # Bundle second — beliefs are passive observers once nav is dead.
+    docker rm -f belief_and_reward >/dev/null 2>&1 || true
+    echo "Containers removed."
 }
 # In bash, a trap on INT does NOT exit by default — it runs the trap
 # then resumes execution. We split: EXIT does idempotent cleanup on
@@ -84,7 +91,8 @@ publish_collision_toggle() {
 wait_until_reached() {
     docker compose run --rm robot_navigator \
         ros2 run robot_navigator wait_for_reward \
-        "${REACH_THRESHOLD}" "${HOLD_SEC}" "${TIMEOUT_SEC}" || true
+        "${REACH_THRESHOLD}" "${HOLD_SEC}" "${TIMEOUT_SEC}" \
+        "${PEAK_THRESHOLD}" "${EMA_ALPHA}" || true
 }
 
 run_phase() {
