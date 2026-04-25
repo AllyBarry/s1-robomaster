@@ -29,6 +29,7 @@ def _launch_setup(context, *args, **kwargs):
     record_video = LaunchConfiguration("record_video").perform(context).lower() == "true"
     video_fps = LaunchConfiguration("video_fps").perform(context)
     hold_enabled = LaunchConfiguration("hold_enabled").perform(context)
+    rotation_rate = LaunchConfiguration("rotation_rate").perform(context)
 
     actions = []
 
@@ -50,6 +51,7 @@ def _launch_setup(context, *args, **kwargs):
                 "formation_center_y": float(center_y),
                 "assignment": assignment,
                 "robot_ids": robot_ids,
+                "rotation_rate_rad_per_sec": float(rotation_rate),
             },
         ],
         output="screen",
@@ -192,6 +194,15 @@ def generate_launch_description():
             description=(
                 "Enable the 1-bit hold/probe coordination channel on every belief. "
                 "OFF by default — the probe model is run via ./run_belief_and_reward_hold.sh."
+            ),
+        ),
+        DeclareLaunchArgument(
+            "rotation_rate",
+            default_value="0.0",
+            description=(
+                "If non-zero, formation rotates around its centre at this "
+                "rad/s rate. Used by experiment_rotation to test the "
+                "BLR forgetting factor under a drifting reward field."
             ),
         ),
         OpaqueFunction(function=_launch_setup),

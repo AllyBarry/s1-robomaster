@@ -63,6 +63,11 @@ class GlobalFeedback(Node):
         self.declare_parameter("marker_rate_hz", 1.0)
         self.declare_parameter("stale_pose_timeout", 2.0)
         self.declare_parameter("field_frame", "field")
+        # Optional auto-rotation: if non-zero, the formation rotates around
+        # its centre at this angular speed (rad/s). Used by the forgetting-
+        # factor experiment — beliefs see a slowly drifting reward field
+        # and either track it (forgetting<1) or fall behind (forgetting=1).
+        self.declare_parameter("rotation_rate_rad_per_sec", 0.0)
 
         self.robot_ids = [int(x) for x in self.get_parameter("robot_ids").value]
         formation = str(self.get_parameter("formation").value)
@@ -103,6 +108,16 @@ class GlobalFeedback(Node):
         else:
             raise ValueError(f"unknown formation '{formation}'")
 
+        # Cache un-rotated formation + base yaw so the rotation timer can
+        # re-derive self.targets each tick without recomputing the whole
+        # formation shape.
+        self._local = local
+        self._cx, self._cy = cx, cy
+        self._base_yaw = yaw
+        self.rotation_rate = float(
+            self.get_parameter("rotation_rate_rad_per_sec").value
+        )
+        self._rotation_start = self._now_sec()
         self.targets = _rotate_translate(local, yaw, cx, cy)
 
         self.positions: dict[int, tuple[float, float] | None] = {
@@ -142,6 +157,14 @@ class GlobalFeedback(Node):
         return now.sec + now.nanosec * 1e-9
 
     def _tick(self):
+        # Rotate the formation if a rotation rate is configured. Done
+        # before the staleness check so reward measures distance to the
+        # *current* moving target, not the startup position.
+        if self.rotation_rate != 0.0:
+            elapsed = self._now_sec() - self._rotation_start
+            cur_yaw = self._base_yaw + self.rotation_rate * elapsed
+            self.targets = _rotate_translate(self._local, cur_yaw, self._cx, self._cy)
+
         if any(p is None for p in self.positions.values()):
             return
 
