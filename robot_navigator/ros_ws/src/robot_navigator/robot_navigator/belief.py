@@ -72,10 +72,13 @@ class BayesianLinearRFF:
     def _noise(self):
         return max(self.noise_var, self.noise_floor ** 2)
 
-    def update(self, phi, y):
+    def update(self, phi, y, weight: float = 1.0):
         if self.forgetting < 1.0:
             self.S /= self.forgetting
-        nv = self._noise()
+        # weight ∈ (0, 1] scales effective inverse-noise. weight=1 reproduces
+        # the unweighted update; smaller weights inflate observation variance,
+        # damping this sample's pull on the posterior.
+        nv = self._noise() / max(weight, 1e-3)
         Sph = self.S @ phi
         denom = nv + phi @ Sph
         pred = phi @ self.m
@@ -120,10 +123,10 @@ class GradientFieldRFFBLR:
         self.mu_y = np.zeros(H * W)
         self.sig_y = np.full(H * W, prior_std)
 
-    def add_sample(self, row, col, gx_obs, gy_obs):
+    def add_sample(self, row, col, gx_obs, gy_obs, weight: float = 1.0):
         phi = self.Phi_grid[row * self.W + col]
-        self.blr_x.update(phi, gx_obs)
-        self.blr_y.update(phi, gy_obs)
+        self.blr_x.update(phi, gx_obs, weight)
+        self.blr_y.update(phi, gy_obs, weight)
 
     def update_predictions(self):
         self.mu_x, self.sig_x = self.blr_x.predict(self.Phi_grid)
@@ -279,6 +282,27 @@ class BeliefNode(Node):
         # is considered "stuck" — a commit by one robot is then useful to
         # re-seed learning.
         self.declare_parameter("hold_reward_delta_threshold", 0.05)
+        # Soft-hold credit assignment — continuous variant of the 1-bit hold.
+        # Re-uses peer kinematics already on the wire (via the existing
+        # /field/robot_{i}/pose subs) to importance-weight each BLR sample
+        # by how attributable Δr is to *this* robot's motion. Zero extra
+        # bandwidth. OFF by default — enable via run_belief_and_reward_soft.sh.
+        #
+        #   weight = ‖Δp_self‖² / (‖Δp_self‖² + Σ_j ‖Δp_peer_j‖² + eps²)
+        #
+        # The BLR update divides its noise variance by max(weight, floor),
+        # so single-mover ticks update the posterior at full strength while
+        # concurrent-motion ticks are damped automatically. Composes
+        # orthogonally with hold_enabled.
+        self.declare_parameter("soft_hold_enabled", False)
+        # Floor on the importance weight to cap the effective-noise blow-up.
+        # 0.05 caps the inflation at 20× — a heavily contaminated sample
+        # still nudges the posterior rather than being ignored entirely.
+        self.declare_parameter("soft_hold_weight_floor", 0.05)
+        # Denominator regulariser (m). Prevents division blow-up when
+        # nobody has moved much; sets the displacement scale below which
+        # "moves" are treated as pose noise rather than informative motion.
+        self.declare_parameter("soft_hold_eps_m", 0.02)
 
         self.robot_id = int(self.get_parameter("robot_id").value)
         self.res = float(self.get_parameter("grid_resolution").value)
@@ -315,6 +339,15 @@ class BeliefNode(Node):
         self.hold_reward_delta_thr = float(
             self.get_parameter("hold_reward_delta_threshold").value
         )
+        self.soft_hold_enabled = bool(
+            self.get_parameter("soft_hold_enabled").value
+        )
+        self.soft_hold_weight_floor = float(
+            self.get_parameter("soft_hold_weight_floor").value
+        )
+        self.soft_hold_eps_m = float(
+            self.get_parameter("soft_hold_eps_m").value
+        )
 
         # Precomputed world-coord mesh for fast penalty evaluation.
         xs = self.ox + (np.arange(self.W) + 0.5) * self.res
@@ -347,6 +380,10 @@ class BeliefNode(Node):
 
         # Peer position cache: {robot_id: (pos, stamp_monotonic)}.
         self.peer_positions: dict[int, tuple[np.ndarray, float]] = {}
+        # Snapshot of peer_positions taken at the same instant we capture
+        # prev_pos. Together with the live peer_positions, lets soft-hold
+        # measure peer Δp over the same [prev → now] window as Δp_self.
+        self.prev_peer_positions: dict[int, tuple[np.ndarray, float]] = {}
         # Peer waypoint cache — used to avoid argmax'ing onto a cell a
         # peer has already committed to. Only populated for lower-ID
         # peers (priority rule: higher-ID robots yield, lower-IDs don't).
@@ -423,6 +460,21 @@ class BeliefNode(Node):
         self.waypoint_pub = self.create_publisher(
             PointStamped, f"/robot_{self.robot_id}/waypoint", 10
         )
+        # Scalar telemetry for the offline plotter / paper figures:
+        #   uncertainty_mean — single number summarising posterior σ over
+        #     the whole grid. Drops as the model converges; the per-robot
+        #     trajectory of this signal is the headline "agent uncertainty
+        #     in own belief over time" plot.
+        #   sample_weight    — most recent soft-hold importance weight
+        #     applied to a BLR update. Always 1.0 when soft_hold_enabled
+        #     is False; varies in (floor, 1] when on. Lets the plotter
+        #     show the credit-assignment regime each run actually saw.
+        self.unc_mean_pub = self.create_publisher(
+            Float32, f"/robot_{self.robot_id}/belief/uncertainty_mean", 10,
+        )
+        self.weight_pub = self.create_publisher(
+            Float32, f"/robot_{self.robot_id}/belief/sample_weight", 10,
+        )
 
         self.create_timer(0.1, self._belief_tick)
         pub_period = 1.0 / float(self.get_parameter("publish_rate_hz").value)
@@ -442,8 +494,21 @@ class BeliefNode(Node):
         self.get_logger().info(
             f"belief_node[robot_{self.robot_id}] — grid {self.H}×{self.W} "
             f"@ {self.res}m, origin ({self.ox},{self.oy}), "
-            f"waypoints={'on' if self.publish_waypoints else 'off'}"
+            f"waypoints={'on' if self.publish_waypoints else 'off'}, "
+            f"hold={'on' if self.hold_enabled else 'off'}, "
+            f"soft_hold={'on' if self.soft_hold_enabled else 'off'}"
         )
+        # Fast-fail config sanity: with eps_m ≥ min_displacement the eps
+        # regulariser dominates the numerator on every accepted sample,
+        # so even uncontaminated single-mover ticks get heavily down-
+        # weighted. Almost certainly a misconfiguration.
+        if self.soft_hold_enabled and self.soft_hold_eps_m >= self.min_disp:
+            self.get_logger().warn(
+                f"soft_hold_eps_m ({self.soft_hold_eps_m:.3f}) >= "
+                f"min_displacement ({self.min_disp:.3f}) — eps will dominate "
+                f"the numerator and crush single-mover weights. Set "
+                f"soft_hold_eps_m well below min_displacement."
+            )
 
     # ------------------------------------------------------------------ #
     #  Inputs
@@ -555,6 +620,54 @@ class BeliefNode(Node):
     # ------------------------------------------------------------------ #
     #  Belief update
     # ------------------------------------------------------------------ #
+    def _compute_soft_hold_weight(self, disp_self_sq: float) -> float:
+        """Importance weight for the current BLR sample.
+
+        Returns 1.0 when soft-hold is disabled (preserves baseline). Else
+        returns ‖Δp_self‖² / (‖Δp_self‖² + Σ_j ‖Δp_peer_j‖² + eps²),
+        clamped to soft_hold_weight_floor. Each peer Δp is measured over
+        the same [prev → now] window as Δp_self via the prev_peer_positions
+        snapshot. A peer is included only if both its prev and current
+        snapshots are within peer_pose_timeout of now — otherwise its
+        motion is unobservable and skipping is the only honest choice.
+        If we have peer_ids but every peer is unobservable for this
+        sample, throttle-warn so silent telemetry failures surface.
+        """
+        if not self.soft_hold_enabled:
+            return 1.0
+
+        now = time.monotonic()
+        peer_sq_sum = 0.0
+        observed = 0
+        for pid in self.peer_ids:
+            prev = self.prev_peer_positions.get(pid)
+            cur = self.peer_positions.get(pid)
+            if prev is None or cur is None:
+                continue
+            # Both endpoints must be fresh — a stale endpoint means the
+            # peer's motion across that window is unknown, not zero.
+            if (now - prev[1]) > self.peer_timeout:
+                continue
+            if (now - cur[1]) > self.peer_timeout:
+                continue
+            d = cur[0] - prev[0]
+            peer_sq_sum += float(d @ d)
+            observed += 1
+
+        if self.peer_ids and observed == 0:
+            # All peers are unobservable for this sample — soft-hold
+            # collapses to weight=1 and we silently over-credit self
+            # for any concurrent peer motion. Surface it.
+            self.get_logger().warn(
+                "soft_hold: no peer poses fresh at both endpoints — "
+                "weighting this sample as if I'm the sole mover.",
+                throttle_duration_sec=2.0,
+            )
+
+        eps_sq = self.soft_hold_eps_m * self.soft_hold_eps_m
+        w = disp_self_sq / (disp_self_sq + peer_sq_sum + eps_sq)
+        return max(w, self.soft_hold_weight_floor)
+
     def _belief_tick(self):
         if self.pos is None or self.current_reward is None:
             return
@@ -570,6 +683,7 @@ class BeliefNode(Node):
             self.prev_pos = self.pos.copy()
             self.prev_cell = cur_cell
             self.prev_reward = self.current_reward
+            self.prev_peer_positions = dict(self.peer_positions)
             return
 
         # Sample only when the robot enters a new grid cell. Filters cell
@@ -587,13 +701,19 @@ class BeliefNode(Node):
         gx_obs = reward_delta * disp[0] * inv_dist
         gy_obs = reward_delta * disp[1] * inv_dist
 
+        weight = self._compute_soft_hold_weight(dist * dist)
+
         row, col = self.prev_cell
-        self.model.add_sample(row, col, gx_obs, gy_obs)
+        self.model.add_sample(row, col, gx_obs, gy_obs, weight)
         self.model.update_predictions()
+        # Latched scalar — subscribers cache the most recent value so a
+        # logger can sample it at its own cadence between belief ticks.
+        self.weight_pub.publish(Float32(data=float(weight)))
 
         self.prev_pos = self.pos.copy()
         self.prev_cell = cur_cell
         self.prev_reward = self.current_reward
+        self.prev_peer_positions = dict(self.peer_positions)
 
     # ------------------------------------------------------------------ #
     #  Hold / probe mechanism
@@ -817,9 +937,11 @@ class BeliefNode(Node):
     # ------------------------------------------------------------------ #
     def _publish_viz(self):
         stamp = self.get_clock().now().to_msg()
-        self._publish_occupancy(
-            self.unc_pub, stamp, self.model.uncertainty_grid()
-        )
+        unc_grid = self.model.uncertainty_grid()
+        self._publish_occupancy(self.unc_pub, stamp, unc_grid)
+        # Scalar summary of the same grid — single Float32 the trajectory
+        # logger samples per tick to chart "belief converging over time".
+        self.unc_mean_pub.publish(Float32(data=float(unc_grid.mean())))
 
         mu_x, mu_y = self.model.gradient_grids()
         self._publish_occupancy(

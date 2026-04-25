@@ -29,7 +29,11 @@ def _launch_setup(context, *args, **kwargs):
     record_video = LaunchConfiguration("record_video").perform(context).lower() == "true"
     video_fps = LaunchConfiguration("video_fps").perform(context)
     hold_enabled = LaunchConfiguration("hold_enabled").perform(context)
+<<<<<<< HEAD
     rotation_rate = LaunchConfiguration("rotation_rate").perform(context)
+=======
+    soft_hold_enabled = LaunchConfiguration("soft_hold_enabled").perform(context)
+>>>>>>> 368c4ce56aa305407809db0dc9e0d7efbfe9d871
 
     actions = []
 
@@ -70,6 +74,7 @@ def _launch_setup(context, *args, **kwargs):
                 "publish_waypoints": publish_waypoints,
                 "peer_robot_ids": peers,
                 "hold_enabled": hold_enabled,
+                "soft_hold_enabled": soft_hold_enabled,
             }.items(),
         ))
 
