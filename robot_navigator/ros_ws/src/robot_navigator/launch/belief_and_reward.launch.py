@@ -29,11 +29,8 @@ def _launch_setup(context, *args, **kwargs):
     record_video = LaunchConfiguration("record_video").perform(context).lower() == "true"
     video_fps = LaunchConfiguration("video_fps").perform(context)
     hold_enabled = LaunchConfiguration("hold_enabled").perform(context)
-<<<<<<< HEAD
     rotation_rate = LaunchConfiguration("rotation_rate").perform(context)
-=======
     soft_hold_enabled = LaunchConfiguration("soft_hold_enabled").perform(context)
->>>>>>> 368c4ce56aa305407809db0dc9e0d7efbfe9d871
 
     actions = []
 
@@ -208,6 +205,14 @@ def generate_launch_description():
                 "If non-zero, formation rotates around its centre at this "
                 "rad/s rate. Used by experiment_rotation to test the "
                 "BLR forgetting factor under a drifting reward field."
+            ),
+        ),
+        DeclareLaunchArgument(
+            "soft_hold_enabled",
+            default_value="false",
+            description=(
+                "Enable the soft (smooth) hold/probe variant on every "
+                "belief. Forwarded to belief.launch.py as a per-instance arg."
             ),
         ),
         OpaqueFunction(function=_launch_setup),

@@ -120,11 +120,13 @@ if [ "${COLLISION}" = "--collision" ]; then
 fi
 
 echo ""
-echo "=== Running for ${TOTAL_DURATION_SEC}s ==="
+echo "=== Bundle running for ${TOTAL_DURATION_SEC}s ==="
 echo "    Watch:  ros2 topic echo /global_reward"
 echo "    RViz:   /robot_0/belief/gradient_mag (should rotate with targets if forgetting works)"
 echo ""
-sleep "${TOTAL_DURATION_SEC}"
+# run_belief_and_reward.sh now blocks on `docker wait` until the bundle
+# exits (trajectory_logger's on_exit=Shutdown cascades at --duration).
+# Don't double-sleep here — that would idle for another full duration
+# while the bundle is already gone.
 
-echo ""
 echo "=== Done ==="
