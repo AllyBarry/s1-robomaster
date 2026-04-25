@@ -1,0 +1,124 @@
+#!/bin/bash
+# Spatiotemporal experiment driver — formations come from the command
+# line, every phase shares the centre/spacing defined in the CONFIG
+# block below. Transitions are reward-driven (moves on when robots
+# converge), not on a fixed timer.
+#
+# Usage:
+#   ./spatial_temporal <formation> [formation ...]
+#
+# Examples:
+#   ./spatial_temporal line triangle
+#   ./spatial_temporal triangle line triangle line
+#   ./spatial_temporal line line line          # holds line three times
+#
+# Each formation must be one of: line | triangle | circle  (triangle
+# requires exactly 3 robots).
+
+set -e
+cd "$(dirname "$0")"
+
+# ============================================================
+# CONFIG — edit each line as needed
+# ============================================================
+ROBOT_IDS="0,1,2"               # comma-separated; triangle phases need ≥ 3
+SPACING="1.0"                   # m, applied to every phase
+CENTER_X="1.5"                  # m, formation centre x
+CENTER_Y="1.5"                  # m, formation centre y
+
+REACH_THRESHOLD="-0.2"          # /global_reward must hold above this
+HOLD_SEC="3.0"                  # this long to register "reached"
+TIMEOUT_SEC="60"                # bail to next phase regardless
+
+ASSIGNMENT="ordered"            # ordered | nearest
+COLLISION="--collision"         # --collision | --no-collision
+WAYPOINTS="--with-waypoints"    # --with-waypoints | --no-waypoints
+SETTLE_SEC=2                    # grace period after launching the bundle
+# ============================================================
+
+# Phases come from the command line; fall back to a safe default.
+if [ "$#" -eq 0 ]; then
+    echo "No formations given. Defaulting to: line triangle"
+    set -- line triangle
+fi
+
+NAV_IDS=$(echo "${ROBOT_IDS}" | tr ',' ' ')
+N_ROBOTS=$(echo "${NAV_IDS}" | wc -w)
+
+# Pre-flight: triangle requires exactly 3 robots (global_feedback.py:88).
+for f in "$@"; do
+    if [ "${f}" = "triangle" ] && [ "${N_ROBOTS}" -ne 3 ]; then
+        echo "ERROR: 'triangle' phase requires exactly 3 robots (got ${N_ROBOTS})." >&2
+        exit 2
+    fi
+    case "${f}" in
+        line|triangle|circle) ;;
+        *) echo "ERROR: unknown formation '${f}' (use line|triangle|circle)." >&2; exit 2 ;;
+    esac
+done
+
+CLEANED=0
+cleanup() {
+    [ "${CLEANED}" = "1" ] && return
+    CLEANED=1
+    echo ""
+    echo "=== Cleanup ==="
+    docker rm -f belief_and_reward >/dev/null 2>&1 || true
+    for id in ${NAV_IDS}; do
+        docker rm -f "robot_navigator_${id}" >/dev/null 2>&1 || true
+    done
+}
+# In bash, a trap on INT does NOT exit by default — it runs the trap
+# then resumes execution. We split: EXIT does idempotent cleanup on
+# any exit path; INT/TERM clean up *and* exit explicitly so Ctrl+C
+# actually stops the experiment instead of rolling into the next phase.
+trap cleanup EXIT
+trap 'cleanup; exit 130' INT TERM
+
+publish_collision_toggle() {
+    docker compose run --rm robot_navigator \
+        ros2 topic pub --once /collision_avoidance_enabled \
+        std_msgs/Bool "{data: $1}" >/dev/null 2>&1 || true
+}
+
+wait_until_reached() {
+    docker compose run --rm robot_navigator \
+        ros2 run robot_navigator wait_for_reward \
+        "${REACH_THRESHOLD}" "${HOLD_SEC}" "${TIMEOUT_SEC}" || true
+}
+
+run_phase() {
+    local idx="$1"
+    local formation="$2"
+
+    echo ""
+    echo "=== Phase ${idx}: formation=${formation} spacing=${SPACING} centre=(${CENTER_X},${CENTER_Y}) ==="
+    ./run_belief_and_reward.sh \
+        ${COLLISION} \
+        --robots "${ROBOT_IDS}" \
+        --formation "${formation}" \
+        --spacing "${SPACING}" \
+        --center-x "${CENTER_X}" \
+        --center-y "${CENTER_Y}" \
+        --assignment "${ASSIGNMENT}" \
+        ${WAYPOINTS}
+
+    if [ "${COLLISION}" = "--collision" ]; then
+        sleep "${SETTLE_SEC}"
+        publish_collision_toggle "true"
+    fi
+
+    wait_until_reached
+}
+
+echo "=== Starting navigators for: ${NAV_IDS} ==="
+./run_navigator.sh ${NAV_IDS}
+
+idx=1
+for formation in "$@"; do
+    run_phase "${idx}" "${formation}"
+    idx=$((idx + 1))
+done
+
+echo ""
+echo "=== All phases complete ==="
