@@ -29,6 +29,7 @@ def _launch_setup(context, *args, **kwargs):
     record_video = LaunchConfiguration("record_video").perform(context).lower() == "true"
     video_fps = LaunchConfiguration("video_fps").perform(context)
     hold_enabled = LaunchConfiguration("hold_enabled").perform(context)
+    rotation_rate = LaunchConfiguration("rotation_rate").perform(context)
     soft_hold_enabled = LaunchConfiguration("soft_hold_enabled").perform(context)
 
     actions = []
@@ -51,6 +52,7 @@ def _launch_setup(context, *args, **kwargs):
                 "formation_center_y": float(center_y),
                 "assignment": assignment,
                 "robot_ids": robot_ids,
+                "rotation_rate_rad_per_sec": float(rotation_rate),
             },
         ],
         output="screen",
@@ -197,12 +199,20 @@ def generate_launch_description():
             ),
         ),
         DeclareLaunchArgument(
+            "rotation_rate",
+            default_value="0.0",
+            description=(
+                "If non-zero, formation rotates around its centre at this "
+                "rad/s rate. Used by experiment_rotation to test the "
+                "BLR forgetting factor under a drifting reward field."
+            ),
+        ),
+        DeclareLaunchArgument(
             "soft_hold_enabled",
             default_value="false",
             description=(
-                "Enable continuous, peer-kinematics-driven importance weighting "
-                "on every belief's BLR samples. OFF by default — run the soft-hold "
-                "model via ./run_belief_and_reward_soft.sh."
+                "Enable the soft (smooth) hold/probe variant on every "
+                "belief. Forwarded to belief.launch.py as a per-instance arg."
             ),
         ),
         OpaqueFunction(function=_launch_setup),

@@ -68,6 +68,7 @@ SAMPLE_HZ=""
 RECORD_VIDEO="true"
 VIDEO_FPS=""
 RUN_NAME=""
+ROTATION_RATE=""
 
 while [ "$#" -gt 0 ]; do
     case "$1" in
@@ -143,6 +144,10 @@ while [ "$#" -gt 0 ]; do
             RUN_NAME="$2"
             shift 2
             ;;
+        --rotation-rate)
+            ROTATION_RATE="$2"
+            shift 2
+            ;;
         -h|--help)
             sed -n '2,51p' "$0"
             exit 0
@@ -195,6 +200,7 @@ LAUNCH_ARGS+=("log_dir:=${CONTAINER_RUN_DIR}")
 [ -n "${SAMPLE_HZ}"         ] && LAUNCH_ARGS+=("sample_hz:=${SAMPLE_HZ}")
 [ -n "${RECORD_VIDEO}"      ] && LAUNCH_ARGS+=("record_video:=${RECORD_VIDEO}")
 [ -n "${VIDEO_FPS}"         ] && LAUNCH_ARGS+=("video_fps:=${VIDEO_FPS}")
+[ -n "${ROTATION_RATE}"     ] && LAUNCH_ARGS+=("rotation_rate:=${ROTATION_RATE}")
 
 CONTAINER_NAME="belief_and_reward"
 
