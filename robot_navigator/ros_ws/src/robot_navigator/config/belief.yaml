@@ -80,3 +80,12 @@ belief_node:
     hold_info_margin: 1.0
     hold_reward_window_sec: 3.0
     hold_reward_delta_threshold: 0.05
+    # Soft-hold credit assignment — continuous, always-on alternative to
+    # the 1-bit hold above. Importance-weights each BLR sample by how
+    # attributable Δr is to this robot's motion (vs concurrent peer
+    # motion observed via the existing /field/robot_{i}/pose subs). Zero
+    # extra bandwidth. OFF by default — enable via
+    # ./run_belief_and_reward_soft.sh (or pass soft_hold_enabled:=true).
+    soft_hold_enabled: false
+    soft_hold_weight_floor: 0.05
+    soft_hold_eps_m: 0.02

@@ -2,10 +2,22 @@
 Per-episode CSV logger for belief-system hardware experiments.
 
 Subscribes to every robot's `/field/robot_{id}/pose`, the scalar
-`/global_reward`, and `/target_markers` (once, to cache target
-positions), then writes one CSV row per sample tick:
+`/global_reward`, `/target_markers` (once, to cache target positions),
+and per-robot belief telemetry (uncertainty mean, last-sample weight),
+then writes one CSV row per sample tick:
 
-    t, {robot_{id}_x, robot_{id}_y}*, reward
+    t,
+    {robot_{id}_x, robot_{id}_y, robot_{id}_pose_age_s,
+     robot_{id}_belief_unc, robot_{id}_sample_weight}*,
+    reward
+
+`pose_age_s` = (logger receive time − message header.stamp) cached at
+the latest pose receipt — captures the apriltag → field_localizer →
+pose-publish pipeline latency. Spikes here are the most reliable
+real-system robustness signal we have without instrumenting upstream.
+
+`belief_unc` and `sample_weight` are the most recent scalars from the
+per-robot belief node; held until a fresher value arrives.
 
 A JSON sidecar `{scenario}.json` records the robot IDs, target
 positions, and field frame so the offline plotter can overlay targets
@@ -70,6 +82,15 @@ class TrajectoryLoggerNode(Node):
         self.positions: dict[int, tuple[float, float] | None] = {
             rid: None for rid in self.robot_ids
         }
+        # Most recent pose-pipeline latency per robot (s). Computed at
+        # receipt as (logger_recv - msg.header.stamp). NaN until first
+        # pose arrives. Captures the apriltag→pose end-to-end delay.
+        self.pose_age_s: dict[int, float] = {rid: float("nan") for rid in self.robot_ids}
+        # Most recent per-robot belief telemetry from belief_node. Cached
+        # so the sample tick can dump a value even when these arrive at
+        # a slower cadence than sample_hz.
+        self.belief_unc: dict[int, float] = {rid: float("nan") for rid in self.robot_ids}
+        self.sample_weight: dict[int, float] = {rid: float("nan") for rid in self.robot_ids}
         self.reward: float | None = None
         self.targets: list[tuple[float, float]] | None = None
         self._sidecar_written = False
@@ -77,7 +98,13 @@ class TrajectoryLoggerNode(Node):
         self.csv_file = open(csv_path, "w", newline="")
         cols = ["t"]
         for rid in self.robot_ids:
-            cols += [f"robot_{rid}_x", f"robot_{rid}_y"]
+            cols += [
+                f"robot_{rid}_x",
+                f"robot_{rid}_y",
+                f"robot_{rid}_pose_age_s",
+                f"robot_{rid}_belief_unc",
+                f"robot_{rid}_sample_weight",
+            ]
         cols += ["reward"]
         self.writer = csv.writer(self.csv_file)
         self.writer.writerow(cols)
@@ -87,6 +114,20 @@ class TrajectoryLoggerNode(Node):
                 PoseStamped,
                 f"/field/robot_{rid}/pose",
                 lambda msg, r=rid: self._on_pose(msg, r),
+                10,
+            )
+            # Belief telemetry — best-effort: if a belief node isn't up
+            # for this robot id, the columns just stay NaN.
+            self.create_subscription(
+                Float32,
+                f"/robot_{rid}/belief/uncertainty_mean",
+                lambda msg, r=rid: self._on_belief_unc(msg, r),
+                10,
+            )
+            self.create_subscription(
+                Float32,
+                f"/robot_{rid}/belief/sample_weight",
+                lambda msg, r=rid: self._on_sample_weight(msg, r),
                 10,
             )
         self.create_subscription(
@@ -114,6 +155,26 @@ class TrajectoryLoggerNode(Node):
 
     def _on_pose(self, msg: PoseStamped, rid: int):
         self.positions[rid] = (msg.pose.position.x, msg.pose.position.y)
+        # Pose-pipeline latency: gap between when the upstream node
+        # stamped the pose and when this logger received it. Negative
+        # values (clock skew across nodes on the same host shouldn't
+        # happen, but guard) become NaN — we'd rather flag a bad sample
+        # than report fake near-zero latency.
+        stamp = msg.header.stamp
+        stamp_s = stamp.sec + stamp.nanosec * 1e-9
+        if stamp_s <= 0.0:
+            # Upstream forgot to set the stamp — record NaN so the
+            # plot makes the missing-instrumentation case obvious.
+            self.pose_age_s[rid] = float("nan")
+            return
+        age = self._now_sec() - stamp_s
+        self.pose_age_s[rid] = age if age >= 0.0 else float("nan")
+
+    def _on_belief_unc(self, msg: Float32, rid: int):
+        self.belief_unc[rid] = float(msg.data)
+
+    def _on_sample_weight(self, msg: Float32, rid: int):
+        self.sample_weight[rid] = float(msg.data)
 
     def _on_reward(self, msg: Float32):
         self.reward = float(msg.data)
@@ -160,6 +221,13 @@ class TrajectoryLoggerNode(Node):
             self.csv_file.close()
             os._exit(0)
 
+        # Empty cells (vs "nan") preserve the existing convention for
+        # uninitialised pose data; NaN-bearing scalars (pose_age, etc.)
+        # write as "nan" so pandas reads them back as float NaN.
+        def _fmt(v: float) -> str:
+            import math
+            return "" if v is None else ("nan" if math.isnan(v) else f"{v:.4f}")
+
         row: list[str] = [f"{t:.3f}"]
         for rid in self.robot_ids:
             p = self.positions[rid]
@@ -167,6 +235,11 @@ class TrajectoryLoggerNode(Node):
                 row += ["", ""]
             else:
                 row += [f"{p[0]:.4f}", f"{p[1]:.4f}"]
+            row += [
+                _fmt(self.pose_age_s[rid]),
+                _fmt(self.belief_unc[rid]),
+                _fmt(self.sample_weight[rid]),
+            ]
         row.append("" if self.reward is None else f"{self.reward:.4f}")
         self.writer.writerow(row)
 
