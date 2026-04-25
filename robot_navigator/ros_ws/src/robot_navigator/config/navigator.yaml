@@ -21,15 +21,25 @@ robot_navigator:
     # misinferred as BYTE_ARRAY at param-load time. When a peer enters
     # avoidance_radius, cmd_vel is deflected away (linear falloff to 0).
     #
-    # Sized for 0.30 m diameter robots in the 2.5×2.5 m field:
-    #   touch distance     = 0.30 m (centre-to-centre)
-    #   pose noise margin  = ~0.10 m (combined ±0.05 m AprilTag jitter)
-    #   reaction-lag drift = ~0.04 m (peer at 0.2 m/s × 0.2 s pipeline lag)
-    #   → safe boundary    ≈ 0.45 m → set radius to 0.50 m for slack.
-    # Gain set to 2× max_linear_speed so repulsion can dominate the
-    # goal-pull near the peer; without this the goal-pull cancels it.
-    avoidance_radius: 0.50
-    avoidance_gain: 0.40
+    # Design intent: this is the EMERGENCY layer. The wider safety
+    # boundary is the planner's peer_mask_radius (0.50 m in belief.yaml)
+    # — that's the guarantee waypoints aren't placed too close. The
+    # reactive layer only fires when something has gone wrong and a peer
+    # has slipped INSIDE the planner's no-go zone (e.g. sudden pose
+    # update, transient mask gap). So:
+    #   - Tight radius  (0.40 m): only acts in the close zone
+    #   - Strong gain   (1.0 m/s = 5× max_linear_speed): inside that
+    #     zone, repulsion dominates the goal-pull entirely; after
+    #     post-clamp to max_linear_speed, the velocity is essentially
+    #     pure escape direction. No oscillation because falloff is
+    #     monotonic in distance.
+    # Linear-falloff strength at key distances (gain=1.0, radius=0.40):
+    #   d=0.30 (touch):  0.25 m/s   → clamps escape to max_linear_speed
+    #   d=0.20:          0.50 m/s
+    #   d=0.10:          0.75 m/s
+    #   d≥0.40:          0       → no effect outside the close zone
+    avoidance_radius: 0.40
+    avoidance_gain: 1.0
     # Drop from 1.0s → 0.4s: at 0.2 m/s a peer drifts 0.2 m in 1 s, more
     # than the entire safety margin. 0.4 s caps unobserved drift at
     # 0.08 m, well within the noise budget, while still tolerating

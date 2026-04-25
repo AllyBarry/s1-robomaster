@@ -45,21 +45,33 @@ belief_node:
     # repulsion_radius is the 1-σ radius (m); repulsion_weight is the peak
     # penalty added at a peer's current cell.
     #
-    # Sized for 0.30 m diameter robots in the 2.5×2.5 m field. The mask
-    # boundary matches the reactive layer's avoidance_radius (0.50 m) so
-    # the planner never commits to a cell that would force the reactive
-    # layer into conflict with the goal-pull. Gaussian σ sits inside the
-    # mask so the soft penalty rises smoothly as candidate cells approach
-    # the hard boundary; weight is scaled to dominate a typical UCB
-    # margin (α·μ + β·σ ≈ 1.5–2.0 with α=2.0, β=1.5).
+    # Sized for 0.30 m diameter robots in the 2.5×2.5 m field. Two-layer
+    # design: the HARD MASK below (peer_mask_radius=0.50 m) is the
+    # geometric safety guarantee — waypoints can never land inside it.
+    # The Gaussian penalty here is the SOFT STEERING that biases UCB
+    # within the allowed cells away from boundary cells.
+    #
+    # Sharp + strong: small σ keeps the penalty concentrated around the
+    # peer's cell instead of bleeding into far cells, large weight
+    # dominates the UCB score margin (α·μ + β·σ ≈ 1.5–2.0 with α=2.0,
+    # β=1.5) inside that close zone. Avoids over-penalising cells well
+    # outside the safety boundary, which previously biased the planner
+    # against legitimate exploration regions.
+    #
+    # Penalty at key distances (weight=8.0, σ=0.20):
+    #   d=0.00 (peer cell):   8.00
+    #   d=0.20 (1σ, 1 cell):  4.85
+    #   d=0.40 (2σ):          1.08
+    #   d=0.60 (3σ):          0.09
+    #   d=0.70 (next target): 0.02   ← negligible at neighbouring target
     #
     # Mask radius MUST be ≤ formation_spacing (or robots can't reach
     # their own targets — peer A at target_A would mask the cell at
     # target_B). Current global_feedback.yaml uses formation_spacing=0.7,
     # leaving 0.20 m of margin between the mask boundary and the
     # neighbouring target.
-    repulsion_weight: 5.0
-    repulsion_radius: 0.40
+    repulsion_weight: 8.0
+    repulsion_radius: 0.20
     # Drop from 1.0s → 0.4s: matches the reactive layer so both state
     # machines agree on which peers are "live"; caps unobserved peer
     # drift at 0.08 m at 0.2 m/s, well inside the noise budget.
