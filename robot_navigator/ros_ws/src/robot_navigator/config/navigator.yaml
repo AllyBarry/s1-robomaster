@@ -20,9 +20,22 @@ robot_navigator:
     # peer_robot_ids:=1,2) — omitted here because empty YAML lists get
     # misinferred as BYTE_ARRAY at param-load time. When a peer enters
     # avoidance_radius, cmd_vel is deflected away (linear falloff to 0).
-    avoidance_radius: 0.4
-    avoidance_gain: 0.3
-    peer_pose_timeout: 1.0
-    # Reactive peer repulsion is OFF by default. Flip to true here or
-    # toggle live by publishing Bool on /collision_avoidance_enabled.
-    avoidance_enabled: false
+    #
+    # Sized for 0.30 m diameter robots in the 2.5×2.5 m field:
+    #   touch distance     = 0.30 m (centre-to-centre)
+    #   pose noise margin  = ~0.10 m (combined ±0.05 m AprilTag jitter)
+    #   reaction-lag drift = ~0.04 m (peer at 0.2 m/s × 0.2 s pipeline lag)
+    #   → safe boundary    ≈ 0.45 m → set radius to 0.50 m for slack.
+    # Gain set to 2× max_linear_speed so repulsion can dominate the
+    # goal-pull near the peer; without this the goal-pull cancels it.
+    avoidance_radius: 0.50
+    avoidance_gain: 0.40
+    # Drop from 1.0s → 0.4s: at 0.2 m/s a peer drifts 0.2 m in 1 s, more
+    # than the entire safety margin. 0.4 s caps unobserved drift at
+    # 0.08 m, well within the noise budget, while still tolerating
+    # ~3 missed pose frames at the typical 10 Hz pose rate.
+    peer_pose_timeout: 0.40
+    # Reactive peer repulsion is ON by default — needed for the safety
+    # boundary to actually act on cmd_vel. Toggle live by publishing
+    # Bool on /collision_avoidance_enabled.
+    avoidance_enabled: true

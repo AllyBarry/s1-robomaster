@@ -6,7 +6,12 @@ global_feedback:
     formation_center_x: 1.5
     formation_center_y: 1.5
     # Line: neighbour spacing. Triangle/circle: radius from centre.
-    formation_spacing: 0.5
+    # 0.7 m chosen so that with 0.30 m diameter robots and the planner's
+    # peer_mask_radius=0.50 m, robots can actually reach their own
+    # targets — the mask around peer A still leaves ≥0.20 m of clear
+    # cells around target B. Drop this only if you also drop
+    # peer_mask_radius (see belief.yaml) — the two are coupled.
+    formation_spacing: 0.7
     formation_yaw: 0.0
     # Only used when formation == "custom"; flat [x0, y0, x1, y1, ...].
     targets_flat: [0.0]
