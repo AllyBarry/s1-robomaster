@@ -1,2 +1,5 @@
 *.DS_Store
 __pycache__/
+experiment_logs/
+test1/
+*.mp4

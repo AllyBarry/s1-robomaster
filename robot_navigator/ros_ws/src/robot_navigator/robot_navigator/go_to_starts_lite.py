@@ -76,25 +76,15 @@ class GoLite(Node):
     def _on_pose(self, rid, msg):
         self.pose[rid] = (msg.pose.position.x, msg.pose.position.y)
 
-    def _greedy_assign(self):
-        ids = list(self.pose.keys())
-        taken = set()
+    def _ordered_assign(self):
+        """Pair robots to targets by robot ID order: lowest ID -> targets[0],
+        next -> targets[1], etc. Keeps the same robot in the same slot every
+        run so tests are reproducible."""
         out = {}
-        for _ in range(min(len(ids), len(self.targets))):
-            best, best_d = None, math.inf
-            for rid in ids:
-                if rid in out:
-                    continue
-                for j, (tx, ty) in enumerate(self.targets):
-                    if j in taken:
-                        continue
-                    d = math.hypot(self.pose[rid][0] - tx, self.pose[rid][1] - ty)
-                    if d < best_d:
-                        best_d, best = d, (rid, j)
-            if best is None:
+        for i, rid in enumerate(sorted(self.pose.keys())):
+            if i >= len(self.targets):
                 break
-            out[best[0]] = self.targets[best[1]]
-            taken.add(best[1])
+            out[rid] = self.targets[i]
         return out
 
     def _tick(self):
@@ -104,7 +94,7 @@ class GoLite(Node):
         if self.phase == "discover":
             if now - self.t0 < 1.5:
                 return
-            self.assigned = self._greedy_assign()
+            self.assigned = self._ordered_assign()
             if not self.assigned:
                 self.get_logger().error("no robots on /field/robot_*/pose")
                 rclpy.shutdown()

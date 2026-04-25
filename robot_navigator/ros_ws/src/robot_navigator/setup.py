@@ -21,6 +21,7 @@ setup(
             "global_feedback = robot_navigator.global_feedback:main",
             "belief = robot_navigator.belief:main",
             "trajectory_logger = robot_navigator.trajectory_logger:main",
+            "wait_for_reward = robot_navigator.wait_for_reward:main",
             "video_recorder = robot_navigator.video_recorder:main",
             "go_to_starts = robot_navigator.go_to_starts:main",
             "go_to_starts_lite = robot_navigator.go_to_starts_lite:main",
